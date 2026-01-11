@@ -1,112 +1,107 @@
 import type { CompilationResult, CompilationError, CompilationWarning } from '@/types';
 
-// SwiftLaTeX Engine interface
-interface PdfTeXEngine {
-  loadEngine: () => Promise<void>;
-  writeMemFSFile: (filename: string, content: string | Uint8Array) => void;
-  setEngineMainFile: (filename: string) => void;
-  compileLaTeX: () => Promise<{
-    status: number;
-    log: string;
-    pdf: Uint8Array | undefined;
-  }>;
-  flushCache: () => void;
+// Check if running in Tauri
+const isTauri = () => {
+  return typeof window !== 'undefined' && '__TAURI__' in window;
+};
+
+// Tauri invoke helper
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    return tauriInvoke(cmd, args);
+  }
+  throw new Error('Tauri not available');
 }
 
-declare global {
-  interface Window {
-    PdfTeXEngine?: new () => PdfTeXEngine;
-  }
+interface TauriCompilationResult {
+  success: boolean;
+  pdf_path: string | null;
+  pdf_data: number[] | null;
+  log: string;
+  errors: CompilationError[];
+  warnings: CompilationWarning[];
 }
+
+interface LatexInstallation {
+  xelatex: boolean;
+  pdflatex: boolean;
+  lualatex: boolean;
+}
+
+export type LatexEngine = 'xelatex' | 'pdflatex' | 'lualatex';
 
 class LaTeXCompiler {
-  private engine: PdfTeXEngine | null = null;
-  private isLoading = false;
-  private isReady = false;
+  private installation: LatexInstallation | null = null;
+  private currentEngine: LatexEngine = 'xelatex';
 
-  async init(): Promise<void> {
-    if (this.isReady || this.isLoading) return;
-    this.isLoading = true;
+  async checkInstallation(): Promise<LatexInstallation> {
+    if (!isTauri()) {
+      return { xelatex: false, pdflatex: false, lualatex: false };
+    }
+
+    if (this.installation) {
+      return this.installation;
+    }
 
     try {
-      // Load SwiftLaTeX engine from CDN
-      await this.loadScript('https://cdn.jsdelivr.net/npm/swiftlatex-wasm@0.0.7/dist/swiftlatex.js');
-
-      if (window.PdfTeXEngine) {
-        this.engine = new window.PdfTeXEngine();
-        await this.engine.loadEngine();
-        this.isReady = true;
-        console.log('SwiftLaTeX engine loaded successfully');
-      } else {
-        throw new Error('PdfTeXEngine not found');
-      }
+      this.installation = await invoke<LatexInstallation>('check_latex_installation');
+      return this.installation;
     } catch (error) {
-      console.error('Failed to load LaTeX engine:', error);
-      throw error;
-    } finally {
-      this.isLoading = false;
+      console.error('Failed to check LaTeX installation:', error);
+      return { xelatex: false, pdflatex: false, lualatex: false };
     }
   }
 
-  private loadScript(src: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // Check if already loaded
-      if (document.querySelector(`script[src="${src}"]`)) {
-        resolve();
-        return;
-      }
+  setEngine(engine: LatexEngine): void {
+    this.currentEngine = engine;
+  }
 
-      const script = document.createElement('script');
-      script.src = src;
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
-      document.head.appendChild(script);
-    });
+  getEngine(): LatexEngine {
+    return this.currentEngine;
   }
 
   async compile(mainContent: string, files?: Map<string, string>): Promise<CompilationResult> {
-    if (!this.isReady || !this.engine) {
-      try {
-        await this.init();
-      } catch {
-        return {
-          success: false,
-          log: 'Failed to initialize LaTeX engine. Please check your internet connection.',
-          errors: [{ line: 0, message: 'Engine initialization failed' }],
-          warnings: [],
-        };
-      }
+    if (!isTauri()) {
+      return this.compileWithSwiftLatex(mainContent, files);
     }
 
-    try {
-      // Flush cache and write files
-      this.engine!.flushCache();
-      this.engine!.writeMemFSFile('main.tex', mainContent);
+    return this.compileWithTauri(mainContent, files);
+  }
 
-      // Write additional files if provided
+  private async compileWithTauri(
+    mainContent: string,
+    files?: Map<string, string>
+  ): Promise<CompilationResult> {
+    try {
+      // Convert Map to plain object
+      const filesObj: Record<string, string> = {};
       if (files) {
         for (const [filename, content] of files) {
-          this.engine!.writeMemFSFile(filename, content);
+          filesObj[filename] = content;
         }
       }
 
-      // Set main file and compile
-      this.engine!.setEngineMainFile('main.tex');
-      const result = await this.engine!.compileLaTeX();
+      const result = await invoke<TauriCompilationResult>('compile_latex', {
+        request: {
+          content: mainContent,
+          files: filesObj,
+          engine: this.currentEngine,
+        },
+      });
 
-      // Parse log for errors and warnings
-      const { errors, warnings } = this.parseLog(result.log);
+      // Convert number[] to Uint8Array
+      const pdfData = result.pdf_data ? new Uint8Array(result.pdf_data) : undefined;
 
       return {
-        success: result.status === 0 && result.pdf !== undefined,
-        pdf: result.pdf,
+        success: result.success,
+        pdf: pdfData,
         log: result.log,
-        errors,
-        warnings,
+        errors: result.errors,
+        warnings: result.warnings,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown compilation error';
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
         log: message,
@@ -116,57 +111,56 @@ class LaTeXCompiler {
     }
   }
 
-  private parseLog(log: string): { errors: CompilationError[]; warnings: CompilationWarning[] } {
-    const errors: CompilationError[] = [];
-    const warnings: CompilationWarning[] = [];
-
-    const lines = log.split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Match errors like "! LaTeX Error: ..." or "! Undefined control sequence."
-      if (line.startsWith('!')) {
-        const errorMatch = line.match(/^!\s*(.+)/);
-        if (errorMatch) {
-          // Try to find line number from context
-          let lineNum = 0;
-          for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-            const lineMatch = lines[j].match(/l\.(\d+)/);
-            if (lineMatch) {
-              lineNum = parseInt(lineMatch[1], 10);
-              break;
-            }
-          }
-          errors.push({
-            line: lineNum,
-            message: errorMatch[1].trim(),
-          });
-        }
-      }
-
-      // Match warnings like "LaTeX Warning: ..."
-      if (line.includes('Warning:')) {
-        const warnMatch = line.match(/Warning:\s*(.+)/);
-        if (warnMatch) {
-          let lineNum = 0;
-          const lineMatch = line.match(/line\s+(\d+)/i);
-          if (lineMatch) {
-            lineNum = parseInt(lineMatch[1], 10);
-          }
-          warnings.push({
-            line: lineNum,
-            message: warnMatch[1].trim(),
-          });
-        }
-      }
+  private async compileWithSwiftLatex(
+    mainContent: string,
+    files?: Map<string, string>
+  ): Promise<CompilationResult> {
+    // Fallback to SwiftLaTeX for browser mode
+    try {
+      // Dynamic import for browser-only code
+      const { swiftLatexCompiler } = await import('./swiftlatex');
+      return swiftLatexCompiler.compile(mainContent, files);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'SwiftLaTeX not available';
+      return {
+        success: false,
+        log: message,
+        errors: [{ line: 0, message: 'Browser compilation requires SwiftLaTeX. Use the desktop app for full XeLaTeX support.' }],
+        warnings: [],
+      };
     }
-
-    return { errors, warnings };
   }
 
-  isEngineReady(): boolean {
-    return this.isReady;
+  async savePdf(pdfData: Uint8Array, path: string): Promise<void> {
+    if (!isTauri()) {
+      // Browser download fallback
+      const blob = new Blob([pdfData.slice()], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = path.split('/').pop() || 'document.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    await invoke('save_pdf', {
+      pdfData: Array.from(pdfData),
+      path,
+    });
+  }
+
+  async getProjectsDir(): Promise<string> {
+    if (!isTauri()) {
+      return '/projects';
+    }
+    return invoke<string>('get_projects_dir');
+  }
+
+  isTauriApp(): boolean {
+    return isTauri();
   }
 }
 
