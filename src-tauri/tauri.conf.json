@@ -38,9 +38,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": [
+      "scripts/*"
+    ],
     "category": "Productivity",
     "shortDescription": "Offline LaTeX Editor",
-    "longDescription": "A powerful offline LaTeX editor with XeLaTeX support",
+    "longDescription": "A powerful offline LaTeX editor with XeLaTeX support. Includes automatic package detection and installation. Supports XeLaTeX, pdfLaTeX, and LuaLaTeX.",
     "copyright": "MIT License",
     "linux": {
       "appId": "com.offleaf.app"

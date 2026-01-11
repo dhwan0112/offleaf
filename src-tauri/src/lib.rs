@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::Manager;
@@ -7,6 +7,7 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use regex::Regex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompilationResult {
@@ -37,6 +38,171 @@ pub struct CompileRequest {
     content: String,
     files: HashMap<String, String>,
     engine: Option<String>, // "xelatex", "pdflatex", "lualatex"
+    auto_install: Option<bool>, // Auto-install missing packages
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DetectedPackage {
+    name: String,
+    installed: bool,
+    options: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageDetectionResult {
+    packages: Vec<DetectedPackage>,
+    missing: Vec<String>,
+    installed: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AutoInstallResult {
+    success: bool,
+    installed: Vec<String>,
+    failed: Vec<String>,
+    message: String,
+}
+
+// Essential packages that should be pre-installed
+pub const ESSENTIAL_PACKAGES: &[&str] = &[
+    // Korean/CJK support
+    "kotex-utf",
+    "cjk",
+    "xecjk",
+    // Math
+    "amsmath",
+    "amssymb",
+    "amsfonts",
+    "mathtools",
+    // Graphics
+    "graphicx",
+    "xcolor",
+    "pgf", // includes tikz
+    // Tables
+    "booktabs",
+    "array",
+    "tabularx",
+    "longtable",
+    // Fonts
+    "fontspec",
+    // Layout
+    "geometry",
+    "fancyhdr",
+    "titlesec",
+    // References
+    "hyperref",
+    "biblatex",
+    // Code
+    "listings",
+    // Misc
+    "enumitem",
+    "caption",
+    "float",
+];
+
+/// Parse LaTeX content to extract \usepackage commands
+fn parse_usepackages(content: &str) -> Vec<(String, Option<String>)> {
+    let mut packages = Vec::new();
+
+    // Match \usepackage[options]{package} or \usepackage{package}
+    let re = Regex::new(r"\\usepackage\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}").unwrap();
+
+    for cap in re.captures_iter(content) {
+        let options = cap.get(1).map(|m| m.as_str().to_string());
+        let pkg_list = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+
+        for pkg in pkg_list.split(',') {
+            let pkg_name = pkg.trim().to_string();
+            if !pkg_name.is_empty() {
+                packages.push((pkg_name, options.clone()));
+            }
+        }
+    }
+
+    // Also check for \RequirePackage
+    let re2 = Regex::new(r"\\RequirePackage\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}").unwrap();
+    for cap in re2.captures_iter(content) {
+        let options = cap.get(1).map(|m| m.as_str().to_string());
+        let pkg_list = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+
+        for pkg in pkg_list.split(',') {
+            let pkg_name = pkg.trim().to_string();
+            if !pkg_name.is_empty() {
+                packages.push((pkg_name, options.clone()));
+            }
+        }
+    }
+
+    packages
+}
+
+/// Check if a package is installed using kpsewhich
+async fn is_package_installed(package: &str) -> bool {
+    let result = Command::new("kpsewhich")
+        .arg(format!("{}.sty", package))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if result {
+        return true;
+    }
+
+    // Try .cls for document classes
+    Command::new("kpsewhich")
+        .arg(format!("{}.cls", package))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Install missing packages
+async fn install_missing_packages(packages: &[String]) -> AutoInstallResult {
+    let mut installed = Vec::new();
+    let mut failed = Vec::new();
+
+    for pkg in packages {
+        let output = Command::new("tlmgr")
+            .args(["install", pkg])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match output {
+            Ok(out) if out.status.success() => {
+                installed.push(pkg.clone());
+            }
+            _ => {
+                failed.push(pkg.clone());
+            }
+        }
+    }
+
+    let success = failed.is_empty();
+    let message = if success {
+        format!("Successfully installed {} packages", installed.len())
+    } else {
+        format!(
+            "Installed {} packages, {} failed: {}",
+            installed.len(),
+            failed.len(),
+            failed.join(", ")
+        )
+    };
+
+    AutoInstallResult {
+        success,
+        installed,
+        failed,
+        message,
+    }
 }
 
 fn parse_latex_log(log: &str) -> (Vec<CompilationError>, Vec<CompilationWarning>) {
@@ -575,6 +741,103 @@ async fn get_recommended_packages() -> Vec<PackageInfo> {
     ]
 }
 
+// ============ Auto Package Detection Commands ============
+
+/// Detect packages used in LaTeX content
+#[tauri::command]
+async fn detect_packages(content: String) -> Result<PackageDetectionResult, String> {
+    let parsed = parse_usepackages(&content);
+    let mut packages = Vec::new();
+    let mut missing = Vec::new();
+    let mut installed_list = Vec::new();
+
+    for (name, options) in parsed {
+        let is_installed = is_package_installed(&name).await;
+
+        packages.push(DetectedPackage {
+            name: name.clone(),
+            installed: is_installed,
+            options,
+        });
+
+        if is_installed {
+            installed_list.push(name);
+        } else {
+            missing.push(name);
+        }
+    }
+
+    Ok(PackageDetectionResult {
+        packages,
+        missing,
+        installed: installed_list,
+    })
+}
+
+/// Auto-install missing packages from content
+#[tauri::command]
+async fn auto_install_missing(content: String) -> Result<AutoInstallResult, String> {
+    let parsed = parse_usepackages(&content);
+    let mut missing = Vec::new();
+
+    for (name, _) in parsed {
+        if !is_package_installed(&name).await {
+            missing.push(name);
+        }
+    }
+
+    if missing.is_empty() {
+        return Ok(AutoInstallResult {
+            success: true,
+            installed: vec![],
+            failed: vec![],
+            message: "All packages are already installed".to_string(),
+        });
+    }
+
+    Ok(install_missing_packages(&missing).await)
+}
+
+/// Install essential packages for OffLeaf
+#[tauri::command]
+async fn install_essential_packages() -> Result<AutoInstallResult, String> {
+    let mut missing = Vec::new();
+
+    for pkg in ESSENTIAL_PACKAGES {
+        if !is_package_installed(pkg).await {
+            missing.push(pkg.to_string());
+        }
+    }
+
+    if missing.is_empty() {
+        return Ok(AutoInstallResult {
+            success: true,
+            installed: vec![],
+            failed: vec![],
+            message: "All essential packages are already installed".to_string(),
+        });
+    }
+
+    Ok(install_missing_packages(&missing).await)
+}
+
+/// Get list of essential packages and their status
+#[tauri::command]
+async fn get_essential_packages() -> Vec<DetectedPackage> {
+    let mut result = Vec::new();
+
+    for pkg in ESSENTIAL_PACKAGES {
+        let installed = is_package_installed(pkg).await;
+        result.push(DetectedPackage {
+            name: pkg.to_string(),
+            installed,
+            options: None,
+        });
+    }
+
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -597,6 +860,11 @@ pub fn run() {
             remove_package,
             update_packages,
             get_recommended_packages,
+            // Auto-detection commands
+            detect_packages,
+            auto_install_missing,
+            install_essential_packages,
+            get_essential_packages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
