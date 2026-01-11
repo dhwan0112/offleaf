@@ -11,15 +11,17 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Package,
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { useFileStore } from '@/stores/fileStore';
 
 interface ToolbarProps {
   onCompile: () => void;
+  onOpenPackageManager: () => void;
 }
 
-export function Toolbar({ onCompile }: ToolbarProps) {
+export function Toolbar({ onCompile, onOpenPackageManager }: ToolbarProps) {
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
@@ -191,6 +193,15 @@ export function Toolbar({ onCompile }: ToolbarProps) {
           title="Toggle PDF preview"
         >
           <PanelRightClose className="w-4 h-4" />
+        </button>
+
+        {/* Package Manager */}
+        <button
+          onClick={onOpenPackageManager}
+          className="btn btn-secondary p-2"
+          title="패키지 관리자"
+        >
+          <Package className="w-4 h-4" />
         </button>
 
         {/* Settings */}

@@ -5,6 +5,7 @@ import { FileTree } from '@/components/Sidebar/FileTree';
 import { Toolbar } from '@/components/Toolbar/Toolbar';
 import { CompilationLog } from '@/components/Log/CompilationLog';
 import { ToastContainer } from '@/components/Toast/ToastContainer';
+import { PackageManager } from '@/components/PackageManager/PackageManager';
 import { useEditorStore } from '@/stores/editorStore';
 import { useFileStore } from '@/stores/fileStore';
 import { latexCompiler } from '@/lib/latex/compiler';
@@ -14,6 +15,7 @@ function App() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
+  const [showPackageManager, setShowPackageManager] = useState(false);
 
   const showSidebar = useEditorStore((s) => s.showSidebar);
   const showPreview = useEditorStore((s) => s.showPreview);
@@ -150,7 +152,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen">
-      <Toolbar onCompile={handleCompile} />
+      <Toolbar onCompile={handleCompile} onOpenPackageManager={() => setShowPackageManager(true)} />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
@@ -206,6 +208,10 @@ function App() {
       </div>
 
       <ToastContainer />
+      <PackageManager
+        isOpen={showPackageManager}
+        onClose={() => setShowPackageManager(false)}
+      />
     </div>
   );
 }
