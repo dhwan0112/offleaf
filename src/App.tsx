@@ -6,16 +6,33 @@ import { Toolbar } from '@/components/Toolbar/Toolbar';
 import { CompilationLog } from '@/components/Log/CompilationLog';
 import { ToastContainer } from '@/components/Toast/ToastContainer';
 import { PackageManager } from '@/components/PackageManager/PackageManager';
+import { FirstRunSetup } from '@/components/Setup/FirstRunSetup';
 import { useEditorStore } from '@/stores/editorStore';
 import { useFileStore } from '@/stores/fileStore';
-import { latexCompiler } from '@/lib/latex/compiler';
+import { latexCompiler, type AutoInstallResult } from '@/lib/latex/compiler';
 import { storage } from '@/lib/storage/indexeddb';
+
+const SETUP_COMPLETE_KEY = 'offleaf_setup_complete';
 
 function App() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const [showPackageManager, setShowPackageManager] = useState(false);
+  const [showFirstRunSetup, setShowFirstRunSetup] = useState(false);
+
+  // Check if first run setup is needed
+  useEffect(() => {
+    const setupComplete = localStorage.getItem(SETUP_COMPLETE_KEY);
+    if (!setupComplete) {
+      setShowFirstRunSetup(true);
+    }
+  }, []);
+
+  const handleSetupComplete = () => {
+    localStorage.setItem(SETUP_COMPLETE_KEY, 'true');
+    setShowFirstRunSetup(false);
+  };
 
   const showSidebar = useEditorStore((s) => s.showSidebar);
   const showPreview = useEditorStore((s) => s.showPreview);
@@ -70,8 +87,18 @@ function App() {
       );
       const mainContent = mainFile?.content || currentFile.content || '';
 
+      // Auto-install callback
+      const onAutoInstall = (installResult: AutoInstallResult) => {
+        if (installResult.installed.length > 0) {
+          addToast('info', `패키지 자동 설치됨: ${installResult.installed.join(', ')}`);
+        }
+        if (installResult.failed.length > 0) {
+          addToast('warning', `패키지 설치 실패: ${installResult.failed.join(', ')}`);
+        }
+      };
+
       // Compile
-      const result = await latexCompiler.compile(mainContent, files);
+      const result = await latexCompiler.compile(mainContent, files, onAutoInstall);
 
       setCompilationResult(result.log, result.errors, result.warnings);
 
@@ -212,6 +239,9 @@ function App() {
         isOpen={showPackageManager}
         onClose={() => setShowPackageManager(false)}
       />
+      {showFirstRunSetup && (
+        <FirstRunSetup onComplete={handleSetupComplete} />
+      )}
     </div>
   );
 }

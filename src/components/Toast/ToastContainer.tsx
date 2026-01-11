@@ -1,4 +1,4 @@
-import { X, CheckCircle, XCircle, Info } from 'lucide-react';
+import { X, CheckCircle, XCircle, Info, AlertTriangle } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 
 export function ToastContainer() {
@@ -7,7 +7,7 @@ export function ToastContainer() {
 
   if (toasts.length === 0) return null;
 
-  const getIcon = (type: 'success' | 'error' | 'info') => {
+  const getIcon = (type: 'success' | 'error' | 'info' | 'warning') => {
     switch (type) {
       case 'success':
         return <CheckCircle className="w-5 h-5 text-green-400" />;
@@ -15,6 +15,8 @@ export function ToastContainer() {
         return <XCircle className="w-5 h-5 text-red-400" />;
       case 'info':
         return <Info className="w-5 h-5 text-blue-400" />;
+      case 'warning':
+        return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
     }
   };
 

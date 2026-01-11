@@ -29,11 +29,77 @@ interface LatexInstallation {
   lualatex: boolean;
 }
 
+interface DetectedPackage {
+  name: string;
+  installed: boolean;
+  options: string | null;
+}
+
+interface PackageDetectionResult {
+  packages: DetectedPackage[];
+  missing: string[];
+  installed: string[];
+}
+
+interface AutoInstallResult {
+  success: boolean;
+  installed: string[];
+  failed: string[];
+  message: string;
+}
+
 export type LatexEngine = 'xelatex' | 'pdflatex' | 'lualatex';
+
+export type { AutoInstallResult, PackageDetectionResult, DetectedPackage };
 
 class LaTeXCompiler {
   private installation: LatexInstallation | null = null;
   private currentEngine: LatexEngine = 'xelatex';
+  private autoInstallEnabled: boolean = true;
+
+  setAutoInstall(enabled: boolean): void {
+    this.autoInstallEnabled = enabled;
+  }
+
+  getAutoInstall(): boolean {
+    return this.autoInstallEnabled;
+  }
+
+  async detectPackages(content: string): Promise<PackageDetectionResult> {
+    if (!isTauri()) {
+      return { packages: [], missing: [], installed: [] };
+    }
+
+    try {
+      return await invoke<PackageDetectionResult>('detect_packages', { content });
+    } catch (error) {
+      console.error('Failed to detect packages:', error);
+      return { packages: [], missing: [], installed: [] };
+    }
+  }
+
+  async autoInstallMissing(content: string): Promise<AutoInstallResult> {
+    if (!isTauri()) {
+      return {
+        success: false,
+        installed: [],
+        failed: [],
+        message: 'Auto-install only available in desktop app',
+      };
+    }
+
+    try {
+      return await invoke<AutoInstallResult>('auto_install_missing', { content });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        installed: [],
+        failed: [],
+        message,
+      };
+    }
+  }
 
   async checkInstallation(): Promise<LatexInstallation> {
     if (!isTauri()) {
@@ -61,9 +127,24 @@ class LaTeXCompiler {
     return this.currentEngine;
   }
 
-  async compile(mainContent: string, files?: Map<string, string>): Promise<CompilationResult> {
+  async compile(
+    mainContent: string,
+    files?: Map<string, string>,
+    onAutoInstall?: (result: AutoInstallResult) => void
+  ): Promise<CompilationResult> {
     if (!isTauri()) {
       return this.compileWithSwiftLatex(mainContent, files);
+    }
+
+    // Auto-install missing packages if enabled
+    if (this.autoInstallEnabled) {
+      const detection = await this.detectPackages(mainContent);
+      if (detection.missing.length > 0) {
+        const installResult = await this.autoInstallMissing(mainContent);
+        if (onAutoInstall) {
+          onAutoInstall(installResult);
+        }
+      }
     }
 
     return this.compileWithTauri(mainContent, files);

@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["shell-open"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -23,6 +23,8 @@ tempfile = "3"
 tokio = { version = "1", features = ["process", "fs"] }
 dirs = "5"
 uuid = { version = "1", features = ["v4"] }
+regex = "1"
+lazy_static = "1"
 
 [profile.release]
 panic = "abort"
