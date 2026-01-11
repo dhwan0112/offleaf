@@ -236,6 +236,345 @@ async fn save_pdf(pdf_data: Vec<u8>, path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to save PDF: {}", e))
 }
 
+// ============ Package Manager (tlmgr) Commands ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageInfo {
+    name: String,
+    description: String,
+    installed: bool,
+    version: Option<String>,
+    size: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageSearchResult {
+    packages: Vec<PackageInfo>,
+    total: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InstallResult {
+    success: bool,
+    message: String,
+    installed_packages: Vec<String>,
+}
+
+/// Check if tlmgr is available
+#[tauri::command]
+async fn check_tlmgr() -> Result<bool, String> {
+    let result = Command::new("tlmgr")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false);
+    Ok(result)
+}
+
+/// Search for packages
+#[tauri::command]
+async fn search_packages(query: String) -> Result<PackageSearchResult, String> {
+    let output = Command::new("tlmgr")
+        .args(["search", "--global", &query])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run tlmgr search: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut packages = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Parse tlmgr search output format: "package_name - description" or just "package_name:"
+        if let Some(sep_pos) = line.find(" - ") {
+            let name = line[..sep_pos].trim().to_string();
+            let description = line[sep_pos + 3..].trim().to_string();
+            packages.push(PackageInfo {
+                name,
+                description,
+                installed: false,
+                version: None,
+                size: None,
+            });
+        } else if line.ends_with(':') {
+            let name = line.trim_end_matches(':').to_string();
+            packages.push(PackageInfo {
+                name,
+                description: String::new(),
+                installed: false,
+                version: None,
+                size: None,
+            });
+        }
+    }
+
+    let total = packages.len();
+    Ok(PackageSearchResult { packages, total })
+}
+
+/// Get list of installed packages
+#[tauri::command]
+async fn list_installed_packages() -> Result<Vec<PackageInfo>, String> {
+    let output = Command::new("tlmgr")
+        .args(["list", "--only-installed"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run tlmgr list: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut packages = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("tlmgr") {
+            continue;
+        }
+
+        // Parse format: "i package_name: description"
+        if line.starts_with('i') {
+            let rest = line[1..].trim();
+            if let Some(colon_pos) = rest.find(':') {
+                let name = rest[..colon_pos].trim().to_string();
+                let description = rest[colon_pos + 1..].trim().to_string();
+                packages.push(PackageInfo {
+                    name,
+                    description,
+                    installed: true,
+                    version: None,
+                    size: None,
+                });
+            }
+        }
+    }
+
+    Ok(packages)
+}
+
+/// Get detailed info about a package
+#[tauri::command]
+async fn get_package_info(package_name: String) -> Result<PackageInfo, String> {
+    let output = Command::new("tlmgr")
+        .args(["info", &package_name])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run tlmgr info: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let mut name = package_name.clone();
+    let mut description = String::new();
+    let mut installed = false;
+    let mut version = None;
+    let mut size = None;
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.starts_with("package:") {
+            name = line.replace("package:", "").trim().to_string();
+        } else if line.starts_with("shortdesc:") {
+            description = line.replace("shortdesc:", "").trim().to_string();
+        } else if line.starts_with("installed:") {
+            installed = line.contains("Yes");
+        } else if line.starts_with("revision:") {
+            version = Some(line.replace("revision:", "").trim().to_string());
+        } else if line.starts_with("sizes:") {
+            size = Some(line.replace("sizes:", "").trim().to_string());
+        }
+    }
+
+    Ok(PackageInfo {
+        name,
+        description,
+        installed,
+        version,
+        size,
+    })
+}
+
+/// Install a package
+#[tauri::command]
+async fn install_package(package_name: String) -> Result<InstallResult, String> {
+    let output = Command::new("tlmgr")
+        .args(["install", &package_name])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run tlmgr install: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let success = output.status.success();
+
+    let mut installed_packages = Vec::new();
+
+    // Parse installed packages from output
+    for line in stdout.lines() {
+        if line.contains("Installing") || line.contains("install:") {
+            // Extract package name
+            if let Some(pkg) = line.split_whitespace().last() {
+                installed_packages.push(pkg.trim_matches(|c| c == ':' || c == '.').to_string());
+            }
+        }
+    }
+
+    if installed_packages.is_empty() && success {
+        installed_packages.push(package_name.clone());
+    }
+
+    Ok(InstallResult {
+        success,
+        message: if success {
+            format!("Successfully installed {}", package_name)
+        } else {
+            format!("Failed to install {}: {}", package_name, stderr)
+        },
+        installed_packages,
+    })
+}
+
+/// Remove a package
+#[tauri::command]
+async fn remove_package(package_name: String) -> Result<InstallResult, String> {
+    let output = Command::new("tlmgr")
+        .args(["remove", &package_name])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run tlmgr remove: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let success = output.status.success();
+
+    Ok(InstallResult {
+        success,
+        message: if success {
+            format!("Successfully removed {}\n{}", package_name, stdout)
+        } else {
+            format!("Failed to remove {}: {}", package_name, stderr)
+        },
+        installed_packages: vec![],
+    })
+}
+
+/// Update all packages
+#[tauri::command]
+async fn update_packages() -> Result<InstallResult, String> {
+    let output = Command::new("tlmgr")
+        .args(["update", "--all"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run tlmgr update: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let success = output.status.success();
+
+    Ok(InstallResult {
+        success,
+        message: if success {
+            format!("Update completed:\n{}", stdout)
+        } else {
+            format!("Update failed: {}", stderr)
+        },
+        installed_packages: vec![],
+    })
+}
+
+/// Get popular/recommended packages for Korean LaTeX
+#[tauri::command]
+async fn get_recommended_packages() -> Vec<PackageInfo> {
+    vec![
+        PackageInfo {
+            name: "kotex".to_string(),
+            description: "Korean language support (ko.TeX)".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "cjk".to_string(),
+            description: "CJK (Chinese, Japanese, Korean) language support".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "xecjk".to_string(),
+            description: "CJK support for XeLaTeX".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "amsmath".to_string(),
+            description: "AMS mathematical facilities".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "graphicx".to_string(),
+            description: "Enhanced support for graphics".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "hyperref".to_string(),
+            description: "Extensive support for hypertext".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "tikz".to_string(),
+            description: "Create graphics programmatically".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "biblatex".to_string(),
+            description: "Sophisticated bibliographies".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "listings".to_string(),
+            description: "Typeset source code listings".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+        PackageInfo {
+            name: "booktabs".to_string(),
+            description: "Publication quality tables".to_string(),
+            installed: false,
+            version: None,
+            size: None,
+        },
+    ]
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -249,6 +588,15 @@ pub fn run() {
             load_project,
             get_projects_dir,
             save_pdf,
+            // Package manager commands
+            check_tlmgr,
+            search_packages,
+            list_installed_packages,
+            get_package_info,
+            install_package,
+            remove_package,
+            update_packages,
+            get_recommended_packages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
