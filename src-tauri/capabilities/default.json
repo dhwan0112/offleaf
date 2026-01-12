@@ -9,16 +9,7 @@
     "fs:default",
     "shell:allow-open",
     "shell:allow-execute",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "exec-command",
-          "cmd": "",
-          "args": true
-        }
-      ]
-    },
+    "shell:allow-spawn",
     "os:default"
   ]
 }
