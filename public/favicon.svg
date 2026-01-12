@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="leafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Leaf shape -->
+  <path d="M50 10 C20 30, 10 60, 50 90 C90 60, 80 30, 50 10" fill="url(#leafGrad)" stroke="#1B5E20" stroke-width="2"/>
+  <!-- Leaf vein -->
+  <path d="M50 20 L50 80" stroke="#1B5E20" stroke-width="2" fill="none"/>
+  <path d="M50 35 L35 45" stroke="#1B5E20" stroke-width="1.5" fill="none"/>
+  <path d="M50 35 L65 45" stroke="#1B5E20" stroke-width="1.5" fill="none"/>
+  <path d="M50 50 L30 60" stroke="#1B5E20" stroke-width="1.5" fill="none"/>
+  <path d="M50 50 L70 60" stroke="#1B5E20" stroke-width="1.5" fill="none"/>
+  <!-- TeX symbol -->
+  <text x="50" y="55" font-family="serif" font-size="20" font-weight="bold" fill="white" text-anchor="middle">TeX</text>
+</svg>
