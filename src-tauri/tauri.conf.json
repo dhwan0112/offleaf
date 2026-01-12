@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OffLeaf",
   "version": "1.0.0",
-  "identifier": "com.offleaf.app",
+  "identifier": "com.offleaf.editor",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
