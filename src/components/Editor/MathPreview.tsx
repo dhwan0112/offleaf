@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -160,37 +160,30 @@ function findExpressionAtCursor(
 }
 
 export function MathPreview({ content, cursorLine, cursorColumn }: MathPreviewProps) {
-  const [renderedHtml, setRenderedHtml] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
-  const [visible, setVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const renderResult = useMemo(() => {
     const expressions = findMathExpressions(content);
     const currentExpr = findExpressionAtCursor(expressions, cursorLine - 1, cursorColumn - 1);
 
-    if (currentExpr && currentExpr.content) {
-      try {
-        const html = katex.renderToString(currentExpr.content, {
-          displayMode: currentExpr.isDisplay,
-          throwOnError: false,
-          trust: true,
-        });
-        setRenderedHtml(html);
-        setError(null);
-        setVisible(true);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(msg);
-        setRenderedHtml('');
-        setVisible(true);
-      }
-    } else {
-      setVisible(false);
+    if (!currentExpr || !currentExpr.content) {
+      return { visible: false, html: '', error: null };
+    }
+
+    try {
+      const html = katex.renderToString(currentExpr.content, {
+        displayMode: currentExpr.isDisplay,
+        throwOnError: false,
+        trust: true,
+      });
+      return { visible: true, html, error: null };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { visible: true, html: '', error: msg };
     }
   }, [content, cursorLine, cursorColumn]);
 
-  if (!visible) {
+  if (!renderResult.visible) {
     return null;
   }
 
@@ -200,12 +193,12 @@ export function MathPreview({ content, cursorLine, cursorColumn }: MathPreviewPr
       className="absolute bottom-4 right-4 z-50 p-4 bg-white rounded-lg shadow-lg border border-gray-300 max-w-md max-h-40 overflow-auto"
     >
       <div className="text-xs text-gray-500 mb-2">수식 미리보기</div>
-      {error ? (
-        <div className="text-red-500 text-sm">{error}</div>
+      {renderResult.error ? (
+        <div className="text-red-500 text-sm">{renderResult.error}</div>
       ) : (
         <div
           className="text-black math-preview"
-          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+          dangerouslySetInnerHTML={{ __html: renderResult.html }}
         />
       )}
     </div>

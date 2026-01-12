@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import {
   SpellCheck,
   X,
@@ -21,8 +21,8 @@ interface SpellCheckPanelProps {
 }
 
 export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
-  const [results, setResults] = useState<SpellCheckResult[]>([]);
-  const [isChecking, setIsChecking] = useState(false);
+  const [ignoredWords, setIgnoredWords] = useState<Set<string>>(new Set());
+  const [checkTrigger, setCheckTrigger] = useState(0);
 
   const getCurrentFile = useFileStore((s) => s.getCurrentFile);
   const currentProjectId = useFileStore((s) => s.currentProjectId);
@@ -31,28 +31,21 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
 
   const currentFile = getCurrentFile();
 
-  const runSpellCheck = useCallback(() => {
+  // Derive results using useMemo instead of useEffect + setState
+  const results = useMemo(() => {
+    // checkTrigger is used to force recalculation
+    void checkTrigger;
+
     if (!currentFile?.content) {
-      setResults([]);
-      return;
+      return [];
     }
 
-    setIsChecking(true);
-
-    // Run spell check asynchronously
-    setTimeout(() => {
-      const spellResults = checkSpelling(currentFile.content || '');
-      setResults(spellResults);
-      setIsChecking(false);
-    }, 100);
-  }, [currentFile?.content]);
-
-  // Run spell check when file changes
-  useEffect(() => {
-    if (isOpen) {
-      runSpellCheck();
-    }
-  }, [isOpen, currentFile?.id, runSpellCheck]);
+    const spellResults = checkSpelling(currentFile.content);
+    // Filter out ignored words
+    return spellResults.filter(
+      (r) => !ignoredWords.has(r.word.toLowerCase())
+    );
+  }, [currentFile?.content, ignoredWords, checkTrigger]);
 
   const handleNavigate = (result: SpellCheckResult) => {
     goToLine(result.line);
@@ -76,15 +69,12 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
         line.substring(match.index + result.word.length);
       lines[lineIndex] = newLine;
       updateFileContent(currentProjectId, currentFile.id, lines.join('\n'));
-
-      // Re-run spell check
-      setTimeout(runSpellCheck, 100);
     }
   };
 
   const handleIgnore = (result: SpellCheckResult) => {
     addToIgnoreList(result.word);
-    setResults((prev) => prev.filter((r) => r.word.toLowerCase() !== result.word.toLowerCase()));
+    setIgnoredWords((prev) => new Set([...prev, result.word.toLowerCase()]));
   };
 
   const handleReplaceAll = (word: string, suggestion: string) => {
@@ -93,9 +83,10 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
     const wordRegex = new RegExp(`\\b${word}\\b`, 'gi');
     const newContent = currentFile.content.replace(wordRegex, suggestion);
     updateFileContent(currentProjectId, currentFile.id, newContent);
+  };
 
-    // Re-run spell check
-    setTimeout(runSpellCheck, 100);
+  const handleRefresh = () => {
+    setCheckTrigger((prev) => prev + 1);
   };
 
   if (!isOpen) return null;
@@ -110,12 +101,11 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={runSpellCheck}
-            disabled={isChecking}
+            onClick={handleRefresh}
             className="p-1 hover:bg-[#3c3c3c] rounded"
             title="다시 검사"
           >
-            <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
+            <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={onClose}
@@ -129,12 +119,7 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
 
       {/* Content */}
       <div className="max-h-96 overflow-y-auto">
-        {isChecking ? (
-          <div className="flex items-center justify-center p-8 text-gray-400">
-            <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-            <span>검사 중...</span>
-          </div>
-        ) : results.length === 0 ? (
+        {results.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-gray-400">
             <Check className="w-8 h-8 text-green-400 mb-2" />
             <span>맞춤법 오류가 없습니다</span>
