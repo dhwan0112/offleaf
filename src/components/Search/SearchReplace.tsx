@@ -47,6 +47,20 @@ export function SearchReplace({ isOpen, onClose }: SearchReplaceProps) {
   const updateFileContent = useFileStore((s) => s.updateFileContent);
   const goToLine = useEditorStore((s) => s.goToLine);
 
+  // Navigate to a search result
+  const navigateToResult = useCallback((index: number) => {
+    const result = results[index];
+    if (!result || !currentProjectId) return;
+
+    // Switch to the file if needed
+    setCurrentFile(result.fileId);
+
+    // Navigate to line after a short delay to allow file switch
+    setTimeout(() => {
+      goToLine(result.line);
+    }, 50);
+  }, [results, currentProjectId, setCurrentFile, goToLine]);
+
   // Focus search input when opened
   useEffect(() => {
     if (isOpen && searchInputRef.current) {
@@ -98,7 +112,7 @@ export function SearchReplace({ isOpen, onClose }: SearchReplaceProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, results, selectedResultIndex, onClose]);
+  }, [isOpen, results, selectedResultIndex, onClose, navigateToResult]);
 
   // Search function
   const performSearch = useCallback(() => {
@@ -170,19 +184,6 @@ export function SearchReplace({ isOpen, onClose }: SearchReplaceProps) {
     return () => clearTimeout(timeout);
   }, [performSearch]);
 
-  const navigateToResult = (index: number) => {
-    const result = results[index];
-    if (!result || !currentProjectId) return;
-
-    // Switch to the file if needed
-    setCurrentFile(result.fileId);
-
-    // Navigate to line after a short delay to allow file switch
-    setTimeout(() => {
-      goToLine(result.line);
-    }, 50);
-  };
-
   const handleReplaceOne = () => {
     if (results.length === 0 || !currentProjectId) return;
 
@@ -227,8 +228,6 @@ export function SearchReplace({ isOpen, onClose }: SearchReplaceProps) {
       const file = project.files.find((f) => f.id === fileId);
       if (!file?.content) return;
 
-      let content = file.content;
-
       // Sort results by position (reverse order to maintain indices)
       const sortedResults = [...fileResults].sort(
         (a, b) => {
@@ -237,7 +236,7 @@ export function SearchReplace({ isOpen, onClose }: SearchReplaceProps) {
         }
       );
 
-      const lines = content.split('\n');
+      const lines = file.content.split('\n');
 
       sortedResults.forEach((result) => {
         const line = lines[result.line - 1];

@@ -46,7 +46,9 @@
     "longDescription": "A powerful offline LaTeX editor with XeLaTeX support. Includes automatic package detection and installation. Supports XeLaTeX, pdfLaTeX, and LuaLaTeX.",
     "copyright": "MIT License",
     "linux": {
-      "appId": "com.offleaf.app"
+      "deb": {
+        "depends": []
+      }
     },
     "macOS": {
       "minimumSystemVersion": "10.13"
