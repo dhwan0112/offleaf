@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import {
   SpellCheck,
   X,
@@ -21,8 +21,8 @@ interface SpellCheckPanelProps {
 }
 
 export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
-  const [ignoredWords, setIgnoredWords] = useState<Set<string>>(new Set());
-  const [checkTrigger, setCheckTrigger] = useState(0);
+  const [ignoredWordsArray, setIgnoredWordsArray] = useState<string[]>([]);
+  const [results, setResults] = useState<SpellCheckResult[]>([]);
 
   const getCurrentFile = useFileStore((s) => s.getCurrentFile);
   const currentProjectId = useFileStore((s) => s.currentProjectId);
@@ -31,21 +31,21 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
 
   const currentFile = getCurrentFile();
 
-  // Derive results using useMemo instead of useEffect + setState
-  const results = useMemo(() => {
-    // checkTrigger is used to force recalculation
-    void checkTrigger;
-
+  // Run spell check function
+  const runSpellCheck = () => {
     if (!currentFile?.content) {
-      return [];
+      setResults([]);
+      return;
     }
 
     const spellResults = checkSpelling(currentFile.content);
     // Filter out ignored words
-    return spellResults.filter(
-      (r) => !ignoredWords.has(r.word.toLowerCase())
+    const ignoredSet = new Set(ignoredWordsArray);
+    const filtered = spellResults.filter(
+      (r) => !ignoredSet.has(r.word.toLowerCase())
     );
-  }, [currentFile?.content, ignoredWords, checkTrigger]);
+    setResults(filtered);
+  };
 
   const handleNavigate = (result: SpellCheckResult) => {
     goToLine(result.line);
@@ -74,7 +74,9 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
 
   const handleIgnore = (result: SpellCheckResult) => {
     addToIgnoreList(result.word);
-    setIgnoredWords((prev) => new Set([...prev, result.word.toLowerCase()]));
+    setIgnoredWordsArray((prev) => [...prev, result.word.toLowerCase()]);
+    // Remove from results
+    setResults((prev) => prev.filter((r) => r.word.toLowerCase() !== result.word.toLowerCase()));
   };
 
   const handleReplaceAll = (word: string, suggestion: string) => {
@@ -86,7 +88,7 @@ export function SpellCheckPanel({ isOpen, onClose }: SpellCheckPanelProps) {
   };
 
   const handleRefresh = () => {
-    setCheckTrigger((prev) => prev + 1);
+    runSpellCheck();
   };
 
   if (!isOpen) return null;
