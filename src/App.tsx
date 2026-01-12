@@ -24,7 +24,9 @@ function App() {
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const [showPackageManager, setShowPackageManager] = useState(false);
-  const [showFirstRunSetup, setShowFirstRunSetup] = useState(false);
+  const [showFirstRunSetup, setShowFirstRunSetup] = useState(
+    () => !localStorage.getItem(SETUP_COMPLETE_KEY)
+  );
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showBibTeXManager, setShowBibTeXManager] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -47,14 +49,6 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // Check if first run setup is needed
-  useEffect(() => {
-    const setupComplete = localStorage.getItem(SETUP_COMPLETE_KEY);
-    if (!setupComplete) {
-      setShowFirstRunSetup(true);
-    }
   }, []);
 
   const handleSetupComplete = () => {
@@ -85,13 +79,8 @@ function App() {
   const projects = useFileStore((s) => s.projects);
   const createProject = useFileStore((s) => s.createProject);
 
-  // Create default project if none exists
-  useEffect(() => {
-    if (projects.length === 0) {
-      // Show template selector for first project
-      setShowTemplateSelector(true);
-    }
-  }, [projects.length]);
+  // Show template selector when no projects exist
+  const shouldShowTemplateSelector = showTemplateSelector || projects.length === 0;
 
   // Handle template selection
   const handleTemplateSelect = useCallback((template: DocumentTemplate) => {
@@ -217,7 +206,7 @@ function App() {
     };
 
     loadCachedPdf();
-  }, [currentProject?.id, setPdfData]);
+  }, [currentProject, setPdfData]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -299,7 +288,7 @@ function App() {
         <FirstRunSetup onComplete={handleSetupComplete} />
       )}
       <TemplateSelector
-        isOpen={showTemplateSelector}
+        isOpen={shouldShowTemplateSelector}
         onClose={() => setShowTemplateSelector(false)}
         onSelect={handleTemplateSelect}
       />

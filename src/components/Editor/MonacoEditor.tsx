@@ -182,7 +182,7 @@ export function MonacoEditor({ onCompile }: MonacoEditorProps) {
         editorRef.current.setValue(currentFile.content);
       }
     }
-  }, [currentFile?.id]);
+  }, [currentFile?.id, currentFile?.content]);
 
   // Navigate to target line when set
   useEffect(() => {
