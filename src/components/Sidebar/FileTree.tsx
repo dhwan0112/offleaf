@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   File,
   Folder,
@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronDown,
   FileText,
+  Upload,
 } from 'lucide-react';
 import { useFileStore } from '@/stores/fileStore';
 import type { FileNode } from '@/types';
@@ -158,11 +159,14 @@ interface FileTreeProps {
 export function FileTree({ onNewProject }: FileTreeProps) {
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentProject = useFileStore((s) => s.getCurrentProject());
   const projects = useFileStore((s) => s.projects);
   const setCurrentProject = useFileStore((s) => s.setCurrentProject);
   const createFile = useFileStore((s) => s.createFile);
+  const updateFileContent = useFileStore((s) => s.updateFileContent);
   const currentProjectId = useFileStore((s) => s.currentProjectId);
   const setCurrentFile = useFileStore((s) => s.setCurrentFile);
 
@@ -187,6 +191,75 @@ export function FileTree({ onNewProject }: FileTreeProps) {
     }
   };
 
+  // Handle file drop
+  const handleFilesAdd = useCallback(async (files: FileList | File[]) => {
+    if (!currentProjectId || !currentProject) return;
+
+    const fileArray = Array.from(files);
+
+    for (const file of fileArray) {
+      try {
+        const content = await file.text();
+        const fileName = file.name;
+
+        // Check if file already exists
+        const existingFile = currentProject.files.find(
+          (f) => f.name === fileName && f.type === 'file' && f.parentId === null
+        );
+
+        if (existingFile) {
+          // Overwrite existing file
+          const confirmOverwrite = confirm(`"${fileName}" 파일이 이미 존재합니다. 덮어쓰시겠습니까?`);
+          if (confirmOverwrite) {
+            updateFileContent(currentProjectId, existingFile.id, content);
+            setCurrentFile(existingFile.id);
+          }
+        } else {
+          // Create new file
+          const fileId = createFile(currentProjectId, fileName, null, 'file');
+          updateFileContent(currentProjectId, fileId, content);
+          setCurrentFile(fileId);
+        }
+      } catch (error) {
+        console.error(`Failed to read file ${file.name}:`, error);
+      }
+    }
+  }, [currentProjectId, currentProject, createFile, updateFileContent, setCurrentFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFilesAdd(files);
+    }
+  }, [handleFilesAdd]);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFilesAdd(files);
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [handleFilesAdd]);
+
   if (!currentProject) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
@@ -198,7 +271,32 @@ export function FileTree({ onNewProject }: FileTreeProps) {
   const rootFiles = currentProject.files.filter((f) => f.parentId === null);
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className={`flex flex-col h-full relative ${isDragOver ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".tex,.bib,.sty,.cls,.txt"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+
+      {/* Drag overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-500/20 z-10 flex items-center justify-center pointer-events-none">
+          <div className="bg-[#252526] border-2 border-dashed border-blue-400 rounded-lg p-6 text-center">
+            <Upload className="w-8 h-8 mx-auto mb-2 text-blue-400" />
+            <span className="text-blue-400 font-medium">파일을 여기에 놓으세요</span>
+          </div>
+        </div>
+      )}
+
       {/* Project selector */}
       <div className="px-3 py-2 border-b border-[#3c3c3c]">
         <div className="flex items-center gap-2">
@@ -228,13 +326,22 @@ export function FileTree({ onNewProject }: FileTreeProps) {
         <span className="text-xs font-semibold uppercase text-gray-400">
           Files
         </span>
-        <button
-          onClick={() => setShowNewFile(true)}
-          className="p-1 rounded hover:bg-[#3c3c3c]"
-          title="New file"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-1 rounded hover:bg-[#3c3c3c]"
+            title="파일 추가"
+          >
+            <Upload className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowNewFile(true)}
+            className="p-1 rounded hover:bg-[#3c3c3c]"
+            title="새 파일"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -265,6 +372,15 @@ export function FileTree({ onNewProject }: FileTreeProps) {
             allFiles={currentProject.files}
           />
         ))}
+
+        {/* Empty state with drop hint */}
+        {rootFiles.length === 0 && !showNewFile && (
+          <div className="px-4 py-8 text-center text-gray-500 text-sm">
+            <Upload className="w-6 h-6 mx-auto mb-2 opacity-50" />
+            <p>파일을 드래그하여 추가하거나</p>
+            <p>위 버튼을 클릭하세요</p>
+          </div>
+        )}
       </div>
     </div>
   );
