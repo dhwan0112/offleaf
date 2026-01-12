@@ -108,14 +108,15 @@ export function BibTeXManager({ isOpen, onClose }: BibTeXManagerProps) {
 
   // Find or create .bib file
   const bibFile = currentProject?.files.find((f) => f.name.endsWith('.bib'));
+  const bibFileContent = bibFile?.content;
 
   // Parse entries from bib file content
   const parsedEntries = useMemo(() => {
-    if (bibFile?.content) {
-      return parseBibTeX(bibFile.content);
+    if (bibFileContent) {
+      return parseBibTeX(bibFileContent);
     }
     return [];
-  }, [bibFile?.content]);
+  }, [bibFileContent]);
 
   // Use local entries if modified, otherwise use parsed entries
   const entries = localEntries ?? parsedEntries;
