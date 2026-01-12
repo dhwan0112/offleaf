@@ -61,7 +61,24 @@
   },
   "plugins": {
     "shell": {
-      "open": true
+      "open": true,
+      "scope": [
+        { "name": "run-xelatex", "cmd": "xelatex", "args": true },
+        { "name": "run-pdflatex", "cmd": "pdflatex", "args": true },
+        { "name": "run-lualatex", "cmd": "lualatex", "args": true },
+        { "name": "run-latex", "cmd": "latex", "args": true },
+        { "name": "run-tlmgr", "cmd": "tlmgr", "args": true },
+        { "name": "run-kpsewhich", "cmd": "kpsewhich", "args": true },
+        { "name": "run-bibtex", "cmd": "bibtex", "args": true },
+        { "name": "run-biber", "cmd": "biber", "args": true },
+        { "name": "run-latexmk", "cmd": "latexmk", "args": true },
+        { "name": "run-brew", "cmd": "brew", "args": true },
+        { "name": "run-apt", "cmd": "apt-get", "args": true },
+        { "name": "run-dnf", "cmd": "dnf", "args": true },
+        { "name": "run-pacman", "cmd": "pacman", "args": true },
+        { "name": "run-cmd", "cmd": "cmd", "args": true },
+        { "name": "run-open", "cmd": "open", "args": true }
+      ]
     }
   }
 }
