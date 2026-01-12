@@ -151,11 +151,17 @@ function FileTreeItem({ file, level, allFiles }: FileTreeItemProps) {
   );
 }
 
-export function FileTree() {
+interface FileTreeProps {
+  onNewProject?: () => void;
+}
+
+export function FileTree({ onNewProject }: FileTreeProps) {
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
 
   const currentProject = useFileStore((s) => s.getCurrentProject());
+  const projects = useFileStore((s) => s.projects);
+  const setCurrentProject = useFileStore((s) => s.setCurrentProject);
   const createFile = useFileStore((s) => s.createFile);
   const currentProjectId = useFileStore((s) => s.currentProjectId);
   const setCurrentFile = useFileStore((s) => s.setCurrentFile);
@@ -193,6 +199,31 @@ export function FileTree() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Project selector */}
+      <div className="px-3 py-2 border-b border-[#3c3c3c]">
+        <div className="flex items-center gap-2">
+          <select
+            value={currentProjectId || ''}
+            onChange={(e) => setCurrentProject(e.target.value)}
+            className="input text-sm flex-1 py-1"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={onNewProject}
+            className="p-1.5 rounded hover:bg-[#3c3c3c] text-blue-400"
+            title="새 프로젝트"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Files header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#3c3c3c]">
         <span className="text-xs font-semibold uppercase text-gray-400">
           Files

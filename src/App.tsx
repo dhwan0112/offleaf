@@ -7,10 +7,15 @@ import { CompilationLog } from '@/components/Log/CompilationLog';
 import { ToastContainer } from '@/components/Toast/ToastContainer';
 import { PackageManager } from '@/components/PackageManager/PackageManager';
 import { FirstRunSetup } from '@/components/Setup/FirstRunSetup';
+import { TemplateSelector } from '@/components/Templates/TemplateSelector';
+import { BibTeXManager } from '@/components/BibTeX/BibTeXManager';
+import { SearchReplace } from '@/components/Search/SearchReplace';
+import { SpellCheckPanel } from '@/components/SpellCheck/SpellCheckPanel';
 import { useEditorStore } from '@/stores/editorStore';
 import { useFileStore } from '@/stores/fileStore';
 import { latexCompiler, type AutoInstallResult } from '@/lib/latex/compiler';
 import { storage } from '@/lib/storage/indexeddb';
+import type { DocumentTemplate } from '@/lib/latex/templates';
 
 const SETUP_COMPLETE_KEY = 'offleaf_setup_complete';
 
@@ -20,6 +25,29 @@ function App() {
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const [showPackageManager, setShowPackageManager] = useState(false);
   const [showFirstRunSetup, setShowFirstRunSetup] = useState(false);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [showBibTeXManager, setShowBibTeXManager] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showSpellCheck, setShowSpellCheck] = useState(false);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+F or Cmd+F to open search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+      // Ctrl+H or Cmd+H to open search with replace
+      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Check if first run setup is needed
   useEffect(() => {
@@ -45,6 +73,12 @@ function App() {
   const setCompilationResult = useEditorStore((s) => s.setCompilationResult);
   const setPdfData = useEditorStore((s) => s.setPdfData);
   const addToast = useEditorStore((s) => s.addToast);
+  const theme = useEditorStore((s) => s.theme);
+
+  // Apply theme class to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   const currentProject = useFileStore((s) => s.getCurrentProject());
   const currentFile = useFileStore((s) => s.getCurrentFile());
@@ -54,9 +88,17 @@ function App() {
   // Create default project if none exists
   useEffect(() => {
     if (projects.length === 0) {
-      createProject('My First Project');
+      // Show template selector for first project
+      setShowTemplateSelector(true);
     }
-  }, [projects.length, createProject]);
+  }, [projects.length]);
+
+  // Handle template selection
+  const handleTemplateSelect = useCallback((template: DocumentTemplate) => {
+    const projectName = template.nameKo || template.name;
+    createProject(projectName, template.content);
+    setShowTemplateSelector(false);
+  }, [createProject]);
 
   // Initialize storage
   useEffect(() => {
@@ -179,7 +221,13 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen">
-      <Toolbar onCompile={handleCompile} onOpenPackageManager={() => setShowPackageManager(true)} />
+      <Toolbar
+        onCompile={handleCompile}
+        onOpenPackageManager={() => setShowPackageManager(true)}
+        onOpenBibTeXManager={() => setShowBibTeXManager(true)}
+        onOpenSearch={() => setShowSearch(true)}
+        onOpenSpellCheck={() => setShowSpellCheck(true)}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
@@ -190,7 +238,7 @@ function App() {
               className="bg-[#252526] border-r border-[#3c3c3c] overflow-hidden"
               style={{ width: sidebarWidth }}
             >
-              <FileTree />
+              <FileTree onNewProject={() => setShowTemplateSelector(true)} />
             </div>
             <div
               className="resizer"
@@ -204,8 +252,16 @@ function App() {
           {/* Editor and Preview */}
           <div className="flex flex-1 overflow-hidden">
             {/* Editor */}
-            <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex-1 min-w-0 overflow-hidden relative">
               <MonacoEditor onCompile={handleCompile} />
+              <SearchReplace
+                isOpen={showSearch}
+                onClose={() => setShowSearch(false)}
+              />
+              <SpellCheckPanel
+                isOpen={showSpellCheck}
+                onClose={() => setShowSpellCheck(false)}
+              />
             </div>
 
             {/* Preview */}
@@ -242,6 +298,15 @@ function App() {
       {showFirstRunSetup && (
         <FirstRunSetup onComplete={handleSetupComplete} />
       )}
+      <TemplateSelector
+        isOpen={showTemplateSelector}
+        onClose={() => setShowTemplateSelector(false)}
+        onSelect={handleTemplateSelect}
+      />
+      <BibTeXManager
+        isOpen={showBibTeXManager}
+        onClose={() => setShowBibTeXManager(false)}
+      />
     </div>
   );
 }

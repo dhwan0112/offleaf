@@ -1,7 +1,10 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import type * as monaco from 'monaco-editor';
 import { useFileStore } from '@/stores/fileStore';
+import { useEditorStore } from '@/stores/editorStore';
+import { registerLatexCompletionProvider } from '@/lib/latex/completions';
+import { MathPreview } from './MathPreview';
 
 // LaTeX language configuration
 const LATEX_LANGUAGE_ID = 'latex';
@@ -13,7 +16,7 @@ const registerLatexLanguage = (monaco: Monaco) => {
   }
 
   // Register LaTeX language
-  monaco.languages.register({ id: LATEX_LANGUAGE_ID, extensions: ['.tex', '.sty', '.cls'] });
+  monaco.languages.register({ id: LATEX_LANGUAGE_ID, extensions: ['.tex', '.sty', '.cls', '.bib'] });
 
   // LaTeX syntax highlighting
   monaco.languages.setMonarchTokensProvider(LATEX_LANGUAGE_ID, {
@@ -121,67 +124,8 @@ const registerLatexLanguage = (monaco: Monaco) => {
     ],
   });
 
-  // LaTeX completions
-  monaco.languages.registerCompletionItemProvider(LATEX_LANGUAGE_ID, {
-    triggerCharacters: ['\\'],
-    provideCompletionItems: (model: monaco.editor.ITextModel, position: monaco.Position) => {
-      const word = model.getWordUntilPosition(position);
-      const range = {
-        startLineNumber: position.lineNumber,
-        endLineNumber: position.lineNumber,
-        startColumn: word.startColumn - 1,
-        endColumn: word.endColumn,
-      };
-
-      const suggestions = [
-        // Document structure
-        { label: '\\documentclass', insertText: 'documentclass[${1:12pt}]{${2:article}}', detail: 'Document class' },
-        { label: '\\usepackage', insertText: 'usepackage{${1:package}}', detail: 'Use package' },
-        { label: '\\begin', insertText: 'begin{${1:environment}}\n\t$0\n\\end{${1:environment}}', detail: 'Begin environment' },
-        { label: '\\section', insertText: 'section{${1:title}}', detail: 'Section' },
-        { label: '\\subsection', insertText: 'subsection{${1:title}}', detail: 'Subsection' },
-
-        // Text formatting
-        { label: '\\textbf', insertText: 'textbf{${1:text}}', detail: 'Bold text' },
-        { label: '\\textit', insertText: 'textit{${1:text}}', detail: 'Italic text' },
-        { label: '\\emph', insertText: 'emph{${1:text}}', detail: 'Emphasized text' },
-        { label: '\\underline', insertText: 'underline{${1:text}}', detail: 'Underlined text' },
-
-        // Math
-        { label: '\\frac', insertText: 'frac{${1:num}}{${2:denom}}', detail: 'Fraction' },
-        { label: '\\sqrt', insertText: 'sqrt{${1:x}}', detail: 'Square root' },
-        { label: '\\sum', insertText: 'sum_{${1:i=1}}^{${2:n}}', detail: 'Sum' },
-        { label: '\\int', insertText: 'int_{${1:a}}^{${2:b}}', detail: 'Integral' },
-        { label: '\\lim', insertText: 'lim_{${1:x \\to \\infty}}', detail: 'Limit' },
-
-        // References
-        { label: '\\label', insertText: 'label{${1:label}}', detail: 'Label' },
-        { label: '\\ref', insertText: 'ref{${1:label}}', detail: 'Reference' },
-        { label: '\\cite', insertText: 'cite{${1:key}}', detail: 'Citation' },
-
-        // Figures
-        { label: '\\includegraphics', insertText: 'includegraphics[width=${1:\\textwidth}]{${2:filename}}', detail: 'Include graphics' },
-        { label: '\\caption', insertText: 'caption{${1:caption}}', detail: 'Caption' },
-
-        // Greek letters
-        { label: '\\alpha', insertText: 'alpha', detail: 'Greek alpha' },
-        { label: '\\beta', insertText: 'beta', detail: 'Greek beta' },
-        { label: '\\gamma', insertText: 'gamma', detail: 'Greek gamma' },
-        { label: '\\delta', insertText: 'delta', detail: 'Greek delta' },
-        { label: '\\epsilon', insertText: 'epsilon', detail: 'Greek epsilon' },
-        { label: '\\pi', insertText: 'pi', detail: 'Greek pi' },
-        { label: '\\sigma', insertText: 'sigma', detail: 'Greek sigma' },
-        { label: '\\omega', insertText: 'omega', detail: 'Greek omega' },
-      ].map((item) => ({
-        ...item,
-        kind: monaco.languages.CompletionItemKind.Snippet,
-        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        range,
-      }));
-
-      return { suggestions };
-    },
-  });
+  // Register comprehensive LaTeX completions
+  registerLatexCompletionProvider(monaco);
 };
 
 interface MonacoEditorProps {
@@ -190,9 +134,13 @@ interface MonacoEditorProps {
 
 export function MonacoEditor({ onCompile }: MonacoEditorProps) {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const currentFile = useFileStore((s) => s.getCurrentFile());
   const currentProjectId = useFileStore((s) => s.currentProjectId);
   const updateFileContent = useFileStore((s) => s.updateFileContent);
+  const targetLine = useEditorStore((s) => s.targetLine);
+  const clearTargetLine = useEditorStore((s) => s.clearTargetLine);
+  const theme = useEditorStore((s) => s.theme);
 
   const handleEditorDidMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -206,6 +154,14 @@ export function MonacoEditor({ onCompile }: MonacoEditorProps) {
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       onCompile?.();
+    });
+
+    // Track cursor position for math preview
+    editor.onDidChangeCursorPosition((e) => {
+      setCursorPosition({
+        line: e.position.lineNumber,
+        column: e.position.column,
+      });
     });
 
     // Focus editor
@@ -228,6 +184,16 @@ export function MonacoEditor({ onCompile }: MonacoEditorProps) {
     }
   }, [currentFile?.id]);
 
+  // Navigate to target line when set
+  useEffect(() => {
+    if (editorRef.current && targetLine !== null && targetLine > 0) {
+      editorRef.current.revealLineInCenter(targetLine);
+      editorRef.current.setPosition({ lineNumber: targetLine, column: 1 });
+      editorRef.current.focus();
+      clearTargetLine();
+    }
+  }, [targetLine, clearTargetLine]);
+
   if (!currentFile) {
     return (
       <div className="flex h-full items-center justify-center text-gray-500">
@@ -240,37 +206,44 @@ export function MonacoEditor({ onCompile }: MonacoEditorProps) {
   }
 
   return (
-    <Editor
-      height="100%"
-      defaultLanguage={LATEX_LANGUAGE_ID}
-      value={currentFile.content || ''}
-      theme="vs-dark"
-      onChange={handleEditorChange}
-      onMount={handleEditorDidMount}
-      options={{
-        fontSize: 14,
-        fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-        lineNumbers: 'on',
-        minimap: { enabled: true, scale: 1 },
-        wordWrap: 'on',
-        automaticLayout: true,
-        scrollBeyondLastLine: false,
-        tabSize: 2,
-        insertSpaces: true,
-        renderWhitespace: 'selection',
-        bracketPairColorization: { enabled: true },
-        folding: true,
-        foldingStrategy: 'indentation',
-        suggest: {
-          showKeywords: true,
-          showSnippets: true,
-        },
-        quickSuggestions: {
-          other: true,
-          comments: false,
-          strings: true,
-        },
-      }}
-    />
+    <div className="relative h-full">
+      <Editor
+        height="100%"
+        defaultLanguage={LATEX_LANGUAGE_ID}
+        value={currentFile.content || ''}
+        theme={theme === 'dark' ? 'vs-dark' : 'light'}
+        onChange={handleEditorChange}
+        onMount={handleEditorDidMount}
+        options={{
+          fontSize: 14,
+          fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+          lineNumbers: 'on',
+          minimap: { enabled: true, scale: 1 },
+          wordWrap: 'on',
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+          tabSize: 2,
+          insertSpaces: true,
+          renderWhitespace: 'selection',
+          bracketPairColorization: { enabled: true },
+          folding: true,
+          foldingStrategy: 'indentation',
+          suggest: {
+            showKeywords: true,
+            showSnippets: true,
+          },
+          quickSuggestions: {
+            other: true,
+            comments: false,
+            strings: true,
+          },
+        }}
+      />
+      <MathPreview
+        content={currentFile.content || ''}
+        cursorLine={cursorPosition.line}
+        cursorColumn={cursorPosition.column}
+      />
+    </div>
   );
 }

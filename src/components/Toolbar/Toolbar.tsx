@@ -12,6 +12,11 @@ import {
   XCircle,
   AlertTriangle,
   Package,
+  Sun,
+  Moon,
+  BookOpen,
+  Search,
+  SpellCheck,
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { useFileStore } from '@/stores/fileStore';
@@ -19,9 +24,12 @@ import { useFileStore } from '@/stores/fileStore';
 interface ToolbarProps {
   onCompile: () => void;
   onOpenPackageManager: () => void;
+  onOpenBibTeXManager: () => void;
+  onOpenSearch?: () => void;
+  onOpenSpellCheck?: () => void;
 }
 
-export function Toolbar({ onCompile, onOpenPackageManager }: ToolbarProps) {
+export function Toolbar({ onCompile, onOpenPackageManager, onOpenBibTeXManager, onOpenSearch, onOpenSpellCheck }: ToolbarProps) {
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
@@ -35,6 +43,8 @@ export function Toolbar({ onCompile, onOpenPackageManager }: ToolbarProps) {
   const showPreview = useEditorStore((s) => s.showPreview);
   const showLog = useEditorStore((s) => s.showLog);
   const pdfData = useEditorStore((s) => s.pdfData);
+  const theme = useEditorStore((s) => s.theme);
+  const toggleTheme = useEditorStore((s) => s.toggleTheme);
 
   const projects = useFileStore((s) => s.projects);
   const currentProjectId = useFileStore((s) => s.currentProjectId);
@@ -167,6 +177,24 @@ export function Toolbar({ onCompile, onOpenPackageManager }: ToolbarProps) {
 
       {/* Right side */}
       <div className="flex items-center gap-2">
+        {/* Search */}
+        <button
+          onClick={onOpenSearch}
+          className="btn btn-secondary p-2"
+          title="검색 (Ctrl+F)"
+        >
+          <Search className="w-4 h-4" />
+        </button>
+
+        {/* Spell Check */}
+        <button
+          onClick={onOpenSpellCheck}
+          className="btn btn-secondary p-2"
+          title="맞춤법 검사"
+        >
+          <SpellCheck className="w-4 h-4" />
+        </button>
+
         {/* Download PDF */}
         <button
           onClick={handleDownload}
@@ -202,6 +230,24 @@ export function Toolbar({ onCompile, onOpenPackageManager }: ToolbarProps) {
           title="패키지 관리자"
         >
           <Package className="w-4 h-4" />
+        </button>
+
+        {/* BibTeX Manager */}
+        <button
+          onClick={onOpenBibTeXManager}
+          className="btn btn-secondary p-2"
+          title="참고문헌 관리"
+        >
+          <BookOpen className="w-4 h-4" />
+        </button>
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          className="btn btn-secondary p-2"
+          title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
         {/* Settings */}
