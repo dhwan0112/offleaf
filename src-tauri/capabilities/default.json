@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schemas.tauri.app/v2/capability",
+  "identifier": "default",
+  "description": "Default capabilities for OffLeaf",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "shell:allow-open",
+    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "exec-command",
+          "cmd": "",
+          "args": true
+        }
+      ]
+    },
+    "os:default"
+  ]
+}
