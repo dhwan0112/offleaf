@@ -50,7 +50,7 @@ interface FileStore {
   currentFileId: string | null;
 
   // Project actions
-  createProject: (name: string) => string;
+  createProject: (name: string, initialContent?: string) => string;
   deleteProject: (id: string) => void;
   setCurrentProject: (id: string | null) => void;
 
@@ -75,7 +75,7 @@ export const useFileStore = create<FileStore>()(
       currentProjectId: null,
       currentFileId: null,
 
-      createProject: (name: string) => {
+      createProject: (name: string, initialContent?: string) => {
         const projectId = generateId();
         const mainFileId = generateId();
 
@@ -83,7 +83,7 @@ export const useFileStore = create<FileStore>()(
           id: mainFileId,
           name: 'main.tex',
           type: 'file',
-          content: DEFAULT_LATEX_CONTENT,
+          content: initialContent || DEFAULT_LATEX_CONTENT,
           parentId: null,
           createdAt: Date.now(),
           updatedAt: Date.now(),

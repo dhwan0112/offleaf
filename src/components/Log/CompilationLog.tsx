@@ -9,6 +9,13 @@ export function CompilationLog() {
   const compilationErrors = useEditorStore((s) => s.compilationErrors);
   const compilationWarnings = useEditorStore((s) => s.compilationWarnings);
   const toggleLog = useEditorStore((s) => s.toggleLog);
+  const goToLine = useEditorStore((s) => s.goToLine);
+
+  const handleErrorClick = (line: number) => {
+    if (line > 0) {
+      goToLine(line);
+    }
+  };
 
   // Auto-scroll to bottom when log updates
   useEffect(() => {
@@ -52,29 +59,35 @@ export function CompilationLog() {
       {(compilationErrors.length > 0 || compilationWarnings.length > 0) && (
         <div className="px-4 py-2 border-b border-[#3c3c3c] max-h-32 overflow-y-auto">
           {compilationErrors.map((error, index) => (
-            <div
+            <button
               key={`error-${index}`}
-              className="flex items-start gap-2 py-1 text-sm text-red-400"
+              onClick={() => handleErrorClick(error.line)}
+              className={`flex items-start gap-2 py-1 text-sm text-red-400 text-left w-full ${
+                error.line > 0 ? 'hover:bg-[#3c3c3c] cursor-pointer rounded px-1 -mx-1' : ''
+              }`}
             >
               <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>
-                {error.line > 0 && <span className="text-gray-500">Line {error.line}: </span>}
+                {error.line > 0 && <span className="text-gray-500 underline">Line {error.line}: </span>}
                 {error.message}
               </span>
-            </div>
+            </button>
           ))}
 
           {compilationWarnings.map((warning, index) => (
-            <div
+            <button
               key={`warning-${index}`}
-              className="flex items-start gap-2 py-1 text-sm text-yellow-400"
+              onClick={() => handleErrorClick(warning.line)}
+              className={`flex items-start gap-2 py-1 text-sm text-yellow-400 text-left w-full ${
+                warning.line > 0 ? 'hover:bg-[#3c3c3c] cursor-pointer rounded px-1 -mx-1' : ''
+              }`}
             >
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>
-                {warning.line > 0 && <span className="text-gray-500">Line {warning.line}: </span>}
+                {warning.line > 0 && <span className="text-gray-500 underline">Line {warning.line}: </span>}
                 {warning.message}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
