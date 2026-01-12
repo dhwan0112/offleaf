@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { X, Plus, Trash2, Copy, Book, FileText, Users, Calendar } from 'lucide-react';
 import { useFileStore } from '@/stores/fileStore';
 import { useEditorStore } from '@/stores/editorStore';
@@ -96,7 +96,7 @@ function generateBibTeX(entries: BibEntry[]): string {
 }
 
 export function BibTeXManager({ isOpen, onClose }: BibTeXManagerProps) {
-  const [entries, setEntries] = useState<BibEntry[]>([]);
+  const [localEntries, setLocalEntries] = useState<BibEntry[] | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<BibEntry | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -109,13 +109,20 @@ export function BibTeXManager({ isOpen, onClose }: BibTeXManagerProps) {
   // Find or create .bib file
   const bibFile = currentProject?.files.find((f) => f.name.endsWith('.bib'));
 
-  useEffect(() => {
+  // Parse entries from bib file content
+  const parsedEntries = useMemo(() => {
     if (bibFile?.content) {
-      setEntries(parseBibTeX(bibFile.content));
-    } else {
-      setEntries([]);
+      return parseBibTeX(bibFile.content);
     }
+    return [];
   }, [bibFile?.content]);
+
+  // Use local entries if modified, otherwise use parsed entries
+  const entries = localEntries ?? parsedEntries;
+
+  const setEntries = (newEntries: BibEntry[]) => {
+    setLocalEntries(newEntries);
+  };
 
   const saveBibFile = (newEntries: BibEntry[]) => {
     if (!currentProjectId) return;
