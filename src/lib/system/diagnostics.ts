@@ -18,13 +18,36 @@ export interface SystemDiagnostics {
   missingRequired: string[];
 }
 
+// Map command to scoped name
+function getScopedCommandName(cmd: string): string {
+  const cmdMap: Record<string, string> = {
+    'xelatex': 'run-xelatex',
+    'pdflatex': 'run-pdflatex',
+    'lualatex': 'run-lualatex',
+    'latex': 'run-latex',
+    'tlmgr': 'run-tlmgr',
+    'kpsewhich': 'run-kpsewhich',
+    'bibtex': 'run-bibtex',
+    'biber': 'run-biber',
+    'latexmk': 'run-latexmk',
+    'brew': 'run-brew',
+    'apt-get': 'run-apt',
+    'dnf': 'run-dnf',
+    'pacman': 'run-pacman',
+    'cmd': 'run-cmd',
+    'open': 'run-open',
+  };
+  return cmdMap[cmd] || cmd;
+}
+
 // Check if a command exists and get its version
 async function checkCommand(
   cmd: string,
   versionArg: string = '--version'
 ): Promise<{ exists: boolean; version?: string; path?: string }> {
   try {
-    const command = Command.create('exec-command', [cmd, versionArg]);
+    const scopedName = getScopedCommandName(cmd);
+    const command = Command.create(scopedName, [versionArg]);
     const output = await command.execute();
 
     if (output.code === 0) {
@@ -32,7 +55,8 @@ async function checkCommand(
       return { exists: true, version };
     }
     return { exists: false };
-  } catch {
+  } catch (e) {
+    console.error(`Command check failed for ${cmd}:`, e);
     return { exists: false };
   }
 }
@@ -97,7 +121,7 @@ async function checkKoreanFonts(): Promise<DiagnosticResult> {
 
   try {
     // Check if kotex package is installed
-    const command = Command.create('exec-command', ['kpsewhich', 'kotex.sty']);
+    const command = Command.create('run-kpsewhich', ['kotex.sty']);
     const output = await command.execute();
 
     if (output.code === 0 && output.stdout.trim()) {
@@ -216,8 +240,8 @@ export async function autoInstallTexLive(): Promise<{ success: boolean; message:
     switch (os) {
       case 'windows': {
         // Open TeX Live installer download page
-        const command = Command.create('exec-command', [
-          'cmd', '/c', 'start', 'https://mirror.ctan.org/systems/texlive/tlnet/install-tl-windows.exe'
+        const command = Command.create('run-cmd', [
+          '/c', 'start', 'https://mirror.ctan.org/systems/texlive/tlnet/install-tl-windows.exe'
         ]);
         await command.execute();
         return {
@@ -230,8 +254,8 @@ export async function autoInstallTexLive(): Promise<{ success: boolean; message:
         // Try homebrew first, then open MacTeX page
         const brewCheck = await checkCommand('brew', '--version');
         if (brewCheck.exists) {
-          const command = Command.create('exec-command', [
-            'brew', 'install', '--cask', 'mactex-no-gui'
+          const command = Command.create('run-brew', [
+            'install', '--cask', 'mactex-no-gui'
           ]);
           await command.execute();
           return {
@@ -239,8 +263,8 @@ export async function autoInstallTexLive(): Promise<{ success: boolean; message:
             message: 'Homebrew를 통해 MacTeX 설치를 시작했습니다.',
           };
         } else {
-          const command = Command.create('exec-command', [
-            'open', 'https://tug.org/mactex/'
+          const command = Command.create('run-open', [
+            'https://tug.org/mactex/'
           ]);
           await command.execute();
           return {
@@ -296,7 +320,7 @@ export async function autoInstallTexLive(): Promise<{ success: boolean; message:
 // Install specific TeX packages using tlmgr
 export async function installTexPackages(packages: string[]): Promise<{ success: boolean; message: string }> {
   try {
-    const command = Command.create('exec-command', ['tlmgr', 'install', ...packages]);
+    const command = Command.create('run-tlmgr', ['install', ...packages]);
     const output = await command.execute();
 
     if (output.code === 0) {
