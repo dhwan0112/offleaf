@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tauri::Manager;
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -219,10 +218,10 @@ fn parse_latex_log(log: &str) -> (Vec<CompilationError>, Vec<CompilationWarning>
             });
         }
         // Match line number errors like "l.42 ..."
-        else if line.starts_with("l.") {
-            if let Some(num_end) = line[2..].find(' ') {
-                if let Ok(line_num) = line[2..2 + num_end].parse::<i32>() {
-                    let msg = line[2 + num_end..].trim().to_string();
+        else if let Some(stripped) = line.strip_prefix("l.") {
+            if let Some(num_end) = stripped.find(' ') {
+                if let Ok(line_num) = stripped[..num_end].parse::<i32>() {
+                    let msg = stripped[num_end..].trim().to_string();
                     if !msg.is_empty() {
                         errors.push(CompilationError {
                             line: line_num,
@@ -508,8 +507,8 @@ async fn list_installed_packages() -> Result<Vec<PackageInfo>, String> {
         }
 
         // Parse format: "i package_name: description"
-        if line.starts_with('i') {
-            let rest = line[1..].trim();
+        if let Some(rest) = line.strip_prefix('i') {
+            let rest = rest.trim();
             if let Some(colon_pos) = rest.find(':') {
                 let name = rest[..colon_pos].trim().to_string();
                 let description = rest[colon_pos + 1..].trim().to_string();
