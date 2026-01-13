@@ -19,14 +19,22 @@ import type { DocumentTemplate } from '@/lib/latex/templates';
 
 const SETUP_COMPLETE_KEY = 'offleaf_setup_complete';
 
+// Safe localStorage check
+function isSetupComplete(): boolean {
+  try {
+    return localStorage.getItem(SETUP_COMPLETE_KEY) === 'true';
+  } catch {
+    // localStorage not available - assume setup is complete to avoid blocking
+    return true;
+  }
+}
+
 function App() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const [showPackageManager, setShowPackageManager] = useState(false);
-  const [showFirstRunSetup, setShowFirstRunSetup] = useState(
-    () => !localStorage.getItem(SETUP_COMPLETE_KEY)
-  );
+  const [showFirstRunSetup, setShowFirstRunSetup] = useState(() => !isSetupComplete());
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showBibTeXManager, setShowBibTeXManager] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -52,7 +60,11 @@ function App() {
   }, []);
 
   const handleSetupComplete = () => {
-    localStorage.setItem(SETUP_COMPLETE_KEY, 'true');
+    try {
+      localStorage.setItem(SETUP_COMPLETE_KEY, 'true');
+    } catch (e) {
+      console.warn('Failed to save setup complete flag:', e);
+    }
     setShowFirstRunSetup(false);
   };
 
