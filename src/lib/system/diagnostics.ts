@@ -1,25 +1,54 @@
 // Dynamic imports to avoid issues when Tauri is not available
 let Command: typeof import('@tauri-apps/plugin-shell').Command | null = null;
 let platformFn: typeof import('@tauri-apps/plugin-os').platform | null = null;
+let pluginsInitialized = false;
+
+// Wait for Tauri to be ready
+async function waitForTauri(maxRetries = 10, delay = 100): Promise<boolean> {
+  for (let i = 0; i < maxRetries; i++) {
+    if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  return false;
+}
 
 // Initialize Tauri plugins lazily
-async function initPlugins() {
+async function initPlugins(): Promise<boolean> {
+  if (pluginsInitialized) {
+    return Command !== null && platformFn !== null;
+  }
+
+  // Wait for Tauri to be ready first
+  const tauriReady = await waitForTauri();
+  if (!tauriReady) {
+    console.warn('Tauri not available after waiting');
+    pluginsInitialized = true;
+    return false;
+  }
+
   if (!Command) {
     try {
       const shell = await import('@tauri-apps/plugin-shell');
       Command = shell.Command;
-    } catch {
-      console.warn('Tauri shell plugin not available');
+      console.log('Shell plugin loaded successfully');
+    } catch (e) {
+      console.warn('Tauri shell plugin not available:', e);
     }
   }
   if (!platformFn) {
     try {
       const os = await import('@tauri-apps/plugin-os');
       platformFn = os.platform;
-    } catch {
-      console.warn('Tauri OS plugin not available');
+      console.log('OS plugin loaded successfully');
+    } catch (e) {
+      console.warn('Tauri OS plugin not available:', e);
     }
   }
+
+  pluginsInitialized = true;
+  return Command !== null && platformFn !== null;
 }
 
 export interface DiagnosticResult {
@@ -67,13 +96,16 @@ async function checkCommand(
   versionArg: string = '--version'
 ): Promise<{ exists: boolean; version?: string; path?: string }> {
   try {
-    await initPlugins();
-    if (!Command) {
+    const pluginsReady = await initPlugins();
+    if (!pluginsReady || !Command) {
+      console.warn(`Cannot check command ${cmd}: plugins not ready`);
       return { exists: false };
     }
     const scopedName = getScopedCommandName(cmd);
+    console.log(`Checking command: ${cmd} -> ${scopedName}`);
     const command = Command.create(scopedName, [versionArg]);
     const output = await command.execute();
+    console.log(`Command ${cmd} result: code=${output.code}`);
 
     if (output.code === 0) {
       const version = output.stdout.trim().split('\n')[0];
