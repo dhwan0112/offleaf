@@ -1,5 +1,55 @@
-import { Command } from '@tauri-apps/plugin-shell';
-import { platform } from '@tauri-apps/plugin-os';
+// Dynamic imports to avoid issues when Tauri is not available
+let Command: typeof import('@tauri-apps/plugin-shell').Command | null = null;
+let platformFn: typeof import('@tauri-apps/plugin-os').platform | null = null;
+let pluginsInitialized = false;
+
+// Wait for Tauri to be ready
+async function waitForTauri(maxRetries = 10, delay = 100): Promise<boolean> {
+  for (let i = 0; i < maxRetries; i++) {
+    if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  return false;
+}
+
+// Initialize Tauri plugins lazily
+async function initPlugins(): Promise<boolean> {
+  if (pluginsInitialized) {
+    return Command !== null && platformFn !== null;
+  }
+
+  // Wait for Tauri to be ready first
+  const tauriReady = await waitForTauri();
+  if (!tauriReady) {
+    console.warn('Tauri not available after waiting');
+    pluginsInitialized = true;
+    return false;
+  }
+
+  if (!Command) {
+    try {
+      const shell = await import('@tauri-apps/plugin-shell');
+      Command = shell.Command;
+      console.log('Shell plugin loaded successfully');
+    } catch (e) {
+      console.warn('Tauri shell plugin not available:', e);
+    }
+  }
+  if (!platformFn) {
+    try {
+      const os = await import('@tauri-apps/plugin-os');
+      platformFn = os.platform;
+      console.log('OS plugin loaded successfully');
+    } catch (e) {
+      console.warn('Tauri OS plugin not available:', e);
+    }
+  }
+
+  pluginsInitialized = true;
+  return Command !== null && platformFn !== null;
+}
 
 export interface DiagnosticResult {
   name: string;
@@ -46,9 +96,16 @@ async function checkCommand(
   versionArg: string = '--version'
 ): Promise<{ exists: boolean; version?: string; path?: string }> {
   try {
+    const pluginsReady = await initPlugins();
+    if (!pluginsReady || !Command) {
+      console.warn(`Cannot check command ${cmd}: plugins not ready`);
+      return { exists: false };
+    }
     const scopedName = getScopedCommandName(cmd);
+    console.log(`Checking command: ${cmd} -> ${scopedName}`);
     const command = Command.create(scopedName, [versionArg]);
     const output = await command.execute();
+    console.log(`Command ${cmd} result: code=${output.code}`);
 
     if (output.code === 0) {
       const version = output.stdout.trim().split('\n')[0];
@@ -120,6 +177,10 @@ async function checkKoreanFonts(): Promise<DiagnosticResult> {
   };
 
   try {
+    await initPlugins();
+    if (!Command) {
+      return result;
+    }
     // Check if kotex package is installed
     const command = Command.create('run-kpsewhich', ['kotex.sty']);
     const output = await command.execute();
@@ -201,7 +262,8 @@ sudo pacman -S texlive-most`;
 
 // Run full system diagnostics
 export async function runDiagnostics(): Promise<SystemDiagnostics> {
-  const os = await platform();
+  await initPlugins();
+  const os = platformFn ? await platformFn() : 'unknown';
 
   const results: DiagnosticResult[] = await Promise.all([
     checkTexLive(),
@@ -234,7 +296,16 @@ export { getInstallInstructions };
 
 // Auto-install TeX Live (opens installer or runs command)
 export async function autoInstallTexLive(): Promise<{ success: boolean; message: string }> {
-  const os = await platform();
+  await initPlugins();
+
+  if (!platformFn || !Command) {
+    return {
+      success: false,
+      message: 'Tauri 환경에서만 자동 설치가 가능합니다.',
+    };
+  }
+
+  const os = await platformFn();
 
   try {
     switch (os) {
@@ -320,6 +391,13 @@ export async function autoInstallTexLive(): Promise<{ success: boolean; message:
 // Install specific TeX packages using tlmgr
 export async function installTexPackages(packages: string[]): Promise<{ success: boolean; message: string }> {
   try {
+    await initPlugins();
+    if (!Command) {
+      return {
+        success: false,
+        message: 'Tauri 환경에서만 패키지 설치가 가능합니다.',
+      };
+    }
     const command = Command.create('run-tlmgr', ['install', ...packages]);
     const output = await command.execute();
 

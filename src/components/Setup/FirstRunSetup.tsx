@@ -62,7 +62,9 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
 
     try {
       if (isTauri()) {
+        console.log('Running diagnostics in Tauri environment...');
         const results = await runDiagnostics();
+        console.log('Diagnostics results:', results);
         setDiagnostics(results);
 
         // If TeX is not installed, go to install step
@@ -89,6 +91,7 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
         }
       } else {
         // Web mode - just check basic LaTeX
+        console.log('Running diagnostics in Web environment...');
         const installation = await latexCompiler.checkInstallation();
         const hasLatex = installation.xelatex || installation.pdflatex || installation.lualatex;
 
@@ -108,8 +111,18 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
       }
     } catch (err) {
       console.error('Diagnostics failed:', err);
-      setError(err instanceof Error ? err.message : String(err));
-      setStep('done');
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      // Still show install-tex step so user can manually install
+      setDiagnostics({
+        platform: 'unknown',
+        results: [
+          { name: 'TeX Live', installed: false, required: true },
+        ],
+        allRequired: false,
+        missingRequired: ['TeX Live'],
+      });
+      setStep('install-tex');
     } finally {
       setDiagnosing(false);
     }
