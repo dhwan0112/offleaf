@@ -208,6 +208,11 @@ function App() {
     loadCachedPdf();
   }, [currentProject, setPdfData]);
 
+  // Show full-screen setup when first run
+  if (showFirstRunSetup) {
+    return <FirstRunSetup onComplete={handleSetupComplete} />;
+  }
+
   return (
     <div className="flex flex-col h-screen">
       <Toolbar
@@ -284,9 +289,6 @@ function App() {
         isOpen={showPackageManager}
         onClose={() => setShowPackageManager(false)}
       />
-      {showFirstRunSetup && (
-        <FirstRunSetup onComplete={handleSetupComplete} />
-      )}
       <TemplateSelector
         isOpen={shouldShowTemplateSelector}
         onClose={() => setShowTemplateSelector(false)}
