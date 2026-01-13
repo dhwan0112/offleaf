@@ -41,6 +41,17 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   throw new Error('Tauri not available');
 }
 
+// Full screen wrapper component - defined outside to prevent recreation on each render
+function FullScreenWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 bg-[#1e1e1e] flex items-center justify-center">
+      <div className="w-full max-w-2xl mx-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 interface FirstRunSetupProps {
   onComplete: () => void;
 }
@@ -229,15 +240,6 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
         >
           {result.installed ? '설치됨' : result.required ? '필수' : '권장'}
         </span>
-      </div>
-    </div>
-  );
-
-  // Full screen wrapper component
-  const FullScreenWrapper = ({ children }: { children: React.ReactNode }) => (
-    <div className="fixed inset-0 bg-[#1e1e1e] flex items-center justify-center">
-      <div className="w-full max-w-2xl mx-4">
-        {children}
       </div>
     </div>
   );
