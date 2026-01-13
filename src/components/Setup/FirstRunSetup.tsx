@@ -233,13 +233,42 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
     </div>
   );
 
+  // Full screen wrapper component
+  const FullScreenWrapper = ({ children }: { children: React.ReactNode }) => (
+    <div className="fixed inset-0 bg-[#1e1e1e] flex items-center justify-center">
+      <div className="w-full max-w-2xl mx-4">
+        {children}
+      </div>
+    </div>
+  );
+
+  // Diagnosing step - full screen loading
+  if (step === 'diagnose' && diagnosing) {
+    return (
+      <FullScreenWrapper>
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mb-6">
+            <Loader2 className="w-10 h-10 animate-spin text-blue-400" />
+          </div>
+          <h2 className="text-2xl font-semibold mb-3">시스템 환경 확인 중...</h2>
+          <p className="text-gray-400 text-center">
+            TeX Live, XeLaTeX, 필수 패키지를 검사합니다
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            잠시만 기다려주세요
+          </p>
+        </div>
+      </FullScreenWrapper>
+    );
+  }
+
   // Done step
   if (step === 'done') {
     const allGood = diagnostics?.allRequired ?? true;
 
     return (
-      <div className="modal-overlay">
-        <div className="modal-content max-w-lg">
+      <FullScreenWrapper>
+        <div className="bg-[#252526] rounded-lg p-8">
           <div className="flex flex-col items-center gap-4 py-4">
             <div
               className={`w-16 h-16 ${allGood ? 'bg-green-500/20' : 'bg-yellow-500/20'} rounded-full flex items-center justify-center`}
@@ -268,13 +297,13 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
             </button>
           </div>
         </div>
-      </div>
+      </FullScreenWrapper>
     );
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content max-w-2xl max-h-[90vh] overflow-y-auto">
+    <FullScreenWrapper>
+      <div className="bg-[#252526] rounded-lg p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
             <Package className="w-5 h-5 text-green-400" />
@@ -288,17 +317,6 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
             </p>
           </div>
         </div>
-
-        {/* Diagnosing Step */}
-        {step === 'diagnose' && diagnosing && (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-            <span className="mt-3 text-gray-300">시스템 환경 확인 중...</span>
-            <span className="text-sm text-gray-500 mt-2">
-              TeX Live, XeLaTeX, 필수 패키지를 검사합니다
-            </span>
-          </div>
-        )}
 
         {/* Install TeX Step */}
         {step === 'install-tex' && (
@@ -508,6 +526,6 @@ export function FirstRunSetup({ onComplete }: FirstRunSetupProps) {
           </div>
         )}
       </div>
-    </div>
+    </FullScreenWrapper>
   );
 }
