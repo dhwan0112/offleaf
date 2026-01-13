@@ -2136,7 +2136,7 @@ dependencies = [
 
 [[package]]
 name = "offleaf"
-version = "1.0.0"
+version = "0.1.1"
 dependencies = [
  "dirs 5.0.1",
  "lazy_static",
