@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
   Loader2,
   Check,
@@ -42,7 +42,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 }
 
 // Full screen wrapper component - defined outside to prevent recreation on each render
-function FullScreenWrapper({ children }: { children: React.ReactNode }) {
+function FullScreenWrapper({ children }: { children: ReactNode }) {
   return (
     <div className="fixed inset-0 bg-[#1e1e1e] flex items-center justify-center">
       <div className="w-full max-w-2xl mx-4">
