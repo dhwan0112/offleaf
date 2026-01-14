@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -6,7 +7,6 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use regex::Regex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompilationResult {
@@ -36,7 +36,7 @@ pub struct CompilationWarning {
 pub struct CompileRequest {
     content: String,
     files: HashMap<String, String>,
-    engine: Option<String>, // "xelatex", "pdflatex", "lualatex"
+    engine: Option<String>,     // "xelatex", "pdflatex", "lualatex"
     auto_install: Option<bool>, // Auto-install missing packages
 }
 
