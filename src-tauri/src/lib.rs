@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -6,7 +7,6 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use regex::Regex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompilationResult {
@@ -36,7 +36,7 @@ pub struct CompilationWarning {
 pub struct CompileRequest {
     content: String,
     files: HashMap<String, String>,
-    engine: Option<String>, // "xelatex", "pdflatex", "lualatex"
+    engine: Option<String>,     // "xelatex", "pdflatex", "lualatex"
     auto_install: Option<bool>, // Auto-install missing packages
 }
 
@@ -839,7 +839,7 @@ async fn get_essential_packages() -> Vec<DetectedPackage> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -866,6 +866,19 @@ pub fn run() {
             install_essential_packages,
             get_essential_packages,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+
+    if let Err(e) = result {
+        eprintln!("Error while running tauri application: {}", e);
+        #[cfg(target_os = "windows")]
+        {
+            use std::io::Write;
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("offleaf_error.log")
+                .and_then(|mut f| writeln!(f, "Error: {}", e));
+        }
+        std::process::exit(1);
+    }
 }
