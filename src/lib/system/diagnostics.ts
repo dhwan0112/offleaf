@@ -2,11 +2,21 @@
 let Command: typeof import('@tauri-apps/plugin-shell').Command | null = null;
 let platformFn: typeof import('@tauri-apps/plugin-os').platform | null = null;
 let pluginsInitialized = false;
+let pluginsInitFailed = false;
+
+// Check if running in Tauri environment
+function isTauriEnv(): boolean {
+  try {
+    return typeof window !== 'undefined' && '__TAURI__' in window;
+  } catch {
+    return false;
+  }
+}
 
 // Wait for Tauri to be ready
-async function waitForTauri(maxRetries = 10, delay = 100): Promise<boolean> {
+async function waitForTauri(maxRetries = 20, delay = 100): Promise<boolean> {
   for (let i = 0; i < maxRetries; i++) {
-    if (typeof window !== 'undefined' && '__TAURI__' in window) {
+    if (isTauriEnv()) {
       return true;
     }
     await new Promise(resolve => setTimeout(resolve, delay));
@@ -14,41 +24,52 @@ async function waitForTauri(maxRetries = 10, delay = 100): Promise<boolean> {
   return false;
 }
 
-// Initialize Tauri plugins lazily
+// Initialize Tauri plugins lazily with better error handling
 async function initPlugins(): Promise<boolean> {
   if (pluginsInitialized) {
-    return Command !== null && platformFn !== null;
+    return !pluginsInitFailed && Command !== null && platformFn !== null;
   }
 
-  // Wait for Tauri to be ready first
-  const tauriReady = await waitForTauri();
-  if (!tauriReady) {
-    console.warn('Tauri not available after waiting');
-    pluginsInitialized = true;
+  // Mark as initialized early to prevent multiple attempts
+  pluginsInitialized = true;
+
+  try {
+    // Wait for Tauri to be ready first
+    const tauriReady = await waitForTauri();
+    if (!tauriReady) {
+      console.warn('Tauri not available after waiting');
+      pluginsInitFailed = true;
+      return false;
+    }
+
+    // Import shell plugin
+    if (!Command) {
+      try {
+        const shell = await import('@tauri-apps/plugin-shell');
+        Command = shell.Command;
+        console.log('Shell plugin loaded successfully');
+      } catch (e) {
+        console.warn('Tauri shell plugin not available:', e);
+      }
+    }
+
+    // Import OS plugin
+    if (!platformFn) {
+      try {
+        const os = await import('@tauri-apps/plugin-os');
+        platformFn = os.platform;
+        console.log('OS plugin loaded successfully');
+      } catch (e) {
+        console.warn('Tauri OS plugin not available:', e);
+      }
+    }
+
+    return Command !== null && platformFn !== null;
+  } catch (e) {
+    console.error('Failed to initialize plugins:', e);
+    pluginsInitFailed = true;
     return false;
   }
-
-  if (!Command) {
-    try {
-      const shell = await import('@tauri-apps/plugin-shell');
-      Command = shell.Command;
-      console.log('Shell plugin loaded successfully');
-    } catch (e) {
-      console.warn('Tauri shell plugin not available:', e);
-    }
-  }
-  if (!platformFn) {
-    try {
-      const os = await import('@tauri-apps/plugin-os');
-      platformFn = os.platform;
-      console.log('OS plugin loaded successfully');
-    } catch (e) {
-      console.warn('Tauri OS plugin not available:', e);
-    }
-  }
-
-  pluginsInitialized = true;
-  return Command !== null && platformFn !== null;
 }
 
 export interface DiagnosticResult {
@@ -101,9 +122,19 @@ async function checkCommand(
       console.warn(`Cannot check command ${cmd}: plugins not ready`);
       return { exists: false };
     }
+
     const scopedName = getScopedCommandName(cmd);
     console.log(`Checking command: ${cmd} -> ${scopedName}`);
-    const command = Command.create(scopedName, [versionArg]);
+
+    // Wrap Command.create in try-catch as it can throw
+    let command;
+    try {
+      command = Command.create(scopedName, [versionArg]);
+    } catch (createError) {
+      console.warn(`Failed to create command ${scopedName}:`, createError);
+      return { exists: false };
+    }
+
     const output = await command.execute();
     console.log(`Command ${cmd} result: code=${output.code}`);
 
@@ -177,12 +208,19 @@ async function checkKoreanFonts(): Promise<DiagnosticResult> {
   };
 
   try {
-    await initPlugins();
-    if (!Command) {
+    const pluginsReady = await initPlugins();
+    if (!pluginsReady || !Command) {
       return result;
     }
+
     // Check if kotex package is installed
-    const command = Command.create('run-kpsewhich', ['kotex.sty']);
+    let command;
+    try {
+      command = Command.create('run-kpsewhich', ['kotex.sty']);
+    } catch {
+      return result;
+    }
+
     const output = await command.execute();
 
     if (output.code === 0 && output.stdout.trim()) {
@@ -262,33 +300,72 @@ sudo pacman -S texlive-most`;
 
 // Run full system diagnostics
 export async function runDiagnostics(): Promise<SystemDiagnostics> {
-  await initPlugins();
-  const os = platformFn ? await platformFn() : 'unknown';
+  try {
+    const pluginsReady = await initPlugins();
 
-  const results: DiagnosticResult[] = await Promise.all([
-    checkTexLive(),
-    checkXeLaTeX(),
-    checkKoreanFonts(),
-    checkBibTeX(),
-    checkLatexmk(),
-  ]);
+    // Get platform, with fallback
+    let os = 'unknown';
+    if (pluginsReady && platformFn) {
+      try {
+        os = await platformFn();
+      } catch (e) {
+        console.warn('Failed to get platform:', e);
+      }
+    }
 
-  const missingRequired = results
-    .filter((r) => r.required && !r.installed)
-    .map((r) => r.name);
+    // If plugins failed, return minimal diagnostics
+    if (!pluginsReady) {
+      console.warn('Plugins not ready, returning minimal diagnostics');
+      return {
+        platform: os,
+        results: [
+          { name: 'TeX Live', installed: false, required: true },
+        ],
+        allRequired: false,
+        missingRequired: ['TeX Live'],
+      };
+    }
 
-  return {
-    platform: os,
-    results,
-    allRequired: missingRequired.length === 0,
-    missingRequired,
-  };
+    const results: DiagnosticResult[] = await Promise.all([
+      checkTexLive().catch(() => ({ name: 'TeX Live', installed: false, required: true })),
+      checkXeLaTeX().catch(() => ({ name: 'XeLaTeX', installed: false, required: true })),
+      checkKoreanFonts().catch(() => ({ name: '한글 폰트 패키지', installed: false, required: false })),
+      checkBibTeX().catch(() => ({ name: 'BibTeX/Biber', installed: false, required: false })),
+      checkLatexmk().catch(() => ({ name: 'Latexmk', installed: false, required: false })),
+    ]);
+
+    const missingRequired = results
+      .filter((r) => r.required && !r.installed)
+      .map((r) => r.name);
+
+    return {
+      platform: os,
+      results,
+      allRequired: missingRequired.length === 0,
+      missingRequired,
+    };
+  } catch (e) {
+    console.error('runDiagnostics failed:', e);
+    // Return safe fallback
+    return {
+      platform: 'unknown',
+      results: [
+        { name: 'TeX Live', installed: false, required: true },
+      ],
+      allRequired: false,
+      missingRequired: ['TeX Live'],
+    };
+  }
 }
 
 // Get quick check - just check if TeX is available
 export async function quickTexCheck(): Promise<boolean> {
-  const texLive = await checkTexLive();
-  return texLive.installed;
+  try {
+    const texLive = await checkTexLive();
+    return texLive.installed;
+  } catch {
+    return false;
+  }
 }
 
 // Export install instructions getter
@@ -296,18 +373,26 @@ export { getInstallInstructions };
 
 // Auto-install TeX Live (opens installer or runs command)
 export async function autoInstallTexLive(): Promise<{ success: boolean; message: string }> {
-  await initPlugins();
-
-  if (!platformFn || !Command) {
-    return {
-      success: false,
-      message: 'Tauri 환경에서만 자동 설치가 가능합니다.',
-    };
-  }
-
-  const os = await platformFn();
-
   try {
+    const pluginsReady = await initPlugins();
+
+    if (!pluginsReady || !platformFn || !Command) {
+      return {
+        success: false,
+        message: 'Tauri 환경에서만 자동 설치가 가능합니다.',
+      };
+    }
+
+    let os: string;
+    try {
+      os = await platformFn();
+    } catch {
+      return {
+        success: false,
+        message: '플랫폼 정보를 가져올 수 없습니다.',
+      };
+    }
+
     switch (os) {
       case 'windows': {
         // Open TeX Live installer download page
@@ -391,14 +476,24 @@ export async function autoInstallTexLive(): Promise<{ success: boolean; message:
 // Install specific TeX packages using tlmgr
 export async function installTexPackages(packages: string[]): Promise<{ success: boolean; message: string }> {
   try {
-    await initPlugins();
-    if (!Command) {
+    const pluginsReady = await initPlugins();
+    if (!pluginsReady || !Command) {
       return {
         success: false,
         message: 'Tauri 환경에서만 패키지 설치가 가능합니다.',
       };
     }
-    const command = Command.create('run-tlmgr', ['install', ...packages]);
+
+    let command;
+    try {
+      command = Command.create('run-tlmgr', ['install', ...packages]);
+    } catch (e) {
+      return {
+        success: false,
+        message: `명령어 생성 실패: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
     const output = await command.execute();
 
     if (output.code === 0) {
